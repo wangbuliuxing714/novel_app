@@ -1,8 +1,5 @@
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'export_service_web.dart' if (dart.library.io) 'export_service_mobile.dart';
 import 'package:novel_app/models/novel.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 
 class ExportService {
   static const Map<String, String> supportedFormats = {
@@ -12,52 +9,9 @@ class ExportService {
     'epub': '电子书文件 (.epub)',
   };
 
-  Future<bool> _requestStoragePermission() async {
-    if (Platform.isAndroid) {
-      final deviceInfo = await DeviceInfoPlugin().androidInfo;
-      if (deviceInfo.version.sdkInt <= 29) {
-        // Android 10 及以下版本需要存储权限
-        final status = await Permission.storage.request();
-        return status.isGranted;
-      } else {
-        // Android 11 及以上版本需要管理所有文件的权限
-        final status = await Permission.manageExternalStorage.request();
-        return status.isGranted;
-      }
-    }
-    return true;
-  }
-
-  Future<Directory?> _getExportDirectory() async {
-    if (Platform.isAndroid) {
-      // 使用公共下载目录
-      final directory = Directory('/storage/emulated/0/Download/AINovel');
-      // 确保目录存在
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
-      return directory;
-    }
-    // 如果不是 Android 平台，使用应用文档目录
-    return await getApplicationDocumentsDirectory();
-  }
+  final ExportPlatform _platform = createExportPlatform();
 
   Future<String> exportChapters(List<Chapter> chapters, String format, {String? title}) async {
-    // 首先请求权限
-    if (!await _requestStoragePermission()) {
-      return '无法获取存储权限，导出失败';
-    }
-
-    // 获取导出目录
-    final directory = await _getExportDirectory();
-    if (directory == null) {
-      return '无法获取存储目录，导出失败';
-    }
-
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final fileName = '${title ?? '小说'}_$timestamp.$format';
-    final file = File('${directory.path}${Platform.pathSeparator}$fileName');
-
     try {
       String content = '';
       
@@ -72,15 +26,12 @@ class ExportService {
           content = _generateHtmlContent(chapters, title);
           break;
         case 'epub':
-          return await _generateEpub(chapters, title, directory.path, fileName);
+          return await _platform.exportEpub(chapters, title);
         default:
           throw Exception('不支持的文件格式：$format');
       }
 
-      await file.writeAsString(content, encoding: const SystemEncoding());
-      
-      // 返回文件的完整路径和更友好的提示
-      return '文件已导出到：${file.path}\n\n你可以在手机的"下载"文件夹中的"AINovel"目录找到导出的小说文件。';
+      return await _platform.exportContent(content, format, title);
     } catch (e) {
       return '导出失败：$e';
     }
@@ -161,12 +112,5 @@ class ExportService {
     buffer.writeln('</html>');
 
     return buffer.toString();
-  }
-
-  Future<String> _generateEpub(List<Chapter> chapters, String? title, String path, String fileName) async {
-    // TODO: 实现EPUB格式导出
-    // 这里需要添加EPUB生成的具体实现
-    // 可以使用第三方库如epub_generator
-    throw UnimplementedError('EPUB格式导出功能尚未实现');
   }
 } 
