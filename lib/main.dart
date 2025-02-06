@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:novel_app/controllers/api_config_controller.dart';
 import 'package:novel_app/controllers/novel_controller.dart';
 import 'package:novel_app/screens/home/home_screen.dart';
@@ -19,6 +20,8 @@ import 'package:novel_app/services/cache_service.dart';
 import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/controllers/theme_controller.dart';
 import 'package:novel_app/controllers/draft_controller.dart';
+import 'package:novel_app/services/license_service.dart';
+import 'package:novel_app/screens/license_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,6 +64,13 @@ void main() async {
     print('没有新公告需要显示');
   }
 
+  // 只在Web平台初始化许可证服务
+  if (kIsWeb) {
+    final licenseService = LicenseService();
+    await licenseService.init();
+    Get.put(licenseService);
+  }
+
   runApp(const MyApp());
 }
 
@@ -70,11 +80,19 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      title: '岱宗文脉',
+      title: 'AI小说生成器',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        primarySwatch: Colors.blue,
         useMaterial3: true,
       ),
+      home: kIsWeb  // 只在Web平台检查许可证
+          ? Obx(() {
+              final licenseService = Get.find<LicenseService>();
+              return licenseService.isLicensed.value
+                  ? const HomeScreen()  // 已激活许可证，显示主页
+                  : LicenseScreen();    // 未激活许可证，显示激活页面
+            })
+          : const HomeScreen(),  // 非Web平台直接显示主页
       initialRoute: '/',
       getPages: [
         GetPage(name: '/', page: () => const HomeScreen()),
