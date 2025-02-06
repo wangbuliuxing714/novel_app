@@ -179,7 +179,6 @@ $theme
     onProgress?.call('正在生成大纲...');
     
     await for (final chunk in _aiService.generateTextStream(
-      model: _apiConfig.selectedModel.value,
       systemPrompt: systemPrompt,
       userPrompt: userPrompt,
       maxTokens: 8000,  // 修改为8000 tokens
@@ -378,7 +377,6 @@ ${_designChapterFocus(number: number, totalChapters: totalChapters, outline: out
     onProgress?.call('正在生成第$number章...');
     
     await for (final chunk in _aiService.generateTextStream(
-      model: _apiConfig.selectedModel.value,
       systemPrompt: systemPrompt,
       userPrompt: userPrompt,
       maxTokens: maxTokens,
@@ -409,7 +407,10 @@ ${_designChapterFocus(number: number, totalChapters: totalChapters, outline: out
     final reviewedContent = await contentReviewService.reviewContent(
       content: content,
       style: _determineStyle(number, totalChapters),
-      model: _apiConfig.selectedModel.value,
+      model: AIModel.values.firstWhere(
+        (m) => m.toString().split('.').last == _apiConfig.selectedModelId.value,
+        orElse: () => AIModel.deepseek,
+      ),
     );
 
     // 缓存成功生成的内容
@@ -854,6 +855,58 @@ ${_designChapterFocus(number: number, totalChapters: totalChapters, outline: out
     } catch (e) {
       print('生成小说失败: $e');
       rethrow;
+    }
+  }
+
+  Future<String> _generateWithAI(String prompt) async {
+    try {
+      String response = '';
+      await for (final chunk in _aiService.generateTextStream(
+        systemPrompt: '''作为一个专业的小说创作助手，请遵循以下创作原则：
+
+1. 故事逻辑：
+   - 确保因果关系清晰合理，事件发展有其必然性
+   - 人物行为要符合其性格特征和处境
+   - 情节转折要有铺垫，避免突兀
+   - 矛盾冲突的解决要符合逻辑
+   - 故事背景要前后一致，细节要互相呼应
+
+2. 叙事结构：
+   - 采用灵活多变的叙事手法，避免单一直线式发展
+   - 合理安排伏笔和悬念，让故事更有层次感
+   - 注意时间线的合理性，避免前后矛盾
+   - 场景转换要流畅自然，不生硬突兀
+   - 故事节奏要有张弛，紧凑处突出戏剧性
+
+3. 人物塑造：
+   - 赋予角色丰富的心理活动和独特性格
+   - 人物成长要符合其经历和环境
+   - 人物关系要复杂立体，互动要自然
+   - 对话要体现人物性格和身份特点
+   - 避免脸谱化和类型化的人物描写
+
+4. 环境描写：
+   - 场景描写要与情节和人物情感相呼应
+   - 细节要生动传神，突出关键特征
+   - 环境氛围要配合故事发展
+   - 感官描写要丰富多样
+   - 避免无关的环境描写，保持紧凑
+
+5. 语言表达：
+   - 用词准确生动，避免重复和陈词滥调
+   - 句式灵活多样，富有韵律感
+   - 善用修辞手法，但不过分堆砌
+   - 对话要自然流畅，符合说话人特点
+   - 描写要细腻传神，避免空洞
+
+请基于以上要求，创作出逻辑严密、情节生动、人物丰满的精彩内容。''',
+        userPrompt: prompt,
+      )) {
+        response += chunk;
+      }
+      return response;
+    } catch (e) {
+      return '生成失败: $e';
     }
   }
 } 

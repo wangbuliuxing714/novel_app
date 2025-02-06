@@ -6,7 +6,6 @@ import 'package:novel_app/controllers/api_config_controller.dart';
 
 enum AIModel {
   deepseek,
-  deepseekChat,
   qwen,
   geminiPro,
   geminiFlash,
@@ -16,55 +15,59 @@ class AIService extends GetxService {
   final ApiConfigController _apiConfig;
   final _client = http.Client();
   final _timeout = const Duration(seconds: 30);
-  final _maxRetries = 3;
+  final _maxRetries = 10;  // 最大重试次数
+  final _retryInterval = const Duration(seconds: 1);  // 重试间隔
 
   AIService(this._apiConfig);
 
   Stream<String> generateTextStream({
-    required AIModel model,
     required String systemPrompt,
     required String userPrompt,
     int maxTokens = 4000,
     double temperature = 0.8,
   }) async* {
-    switch (model) {
-      case AIModel.deepseek:
-        yield* _streamDeepseek(
-          systemPrompt: systemPrompt,
-          userPrompt: userPrompt,
-          maxTokens: maxTokens,
-          temperature: temperature,
-          model: 'deepseek-reasoner',
-        );
-      case AIModel.deepseekChat:
-        yield* _streamDeepseek(
-          systemPrompt: systemPrompt,
-          userPrompt: userPrompt,
-          maxTokens: maxTokens,
-          temperature: temperature,
-          model: 'deepseek-chat',
-        );
-      case AIModel.qwen:
-        yield* _streamQwen(
-          systemPrompt: systemPrompt,
-          userPrompt: userPrompt,
-          maxTokens: maxTokens,
-          temperature: temperature,
-        );
-      case AIModel.geminiPro:
-        yield* _streamGeminiPro(
-          systemPrompt: systemPrompt,
-          userPrompt: userPrompt,
-          maxTokens: maxTokens,
-          temperature: temperature,
-        );
-      case AIModel.geminiFlash:
-        yield* _streamGeminiFlash(
-          systemPrompt: systemPrompt,
-          userPrompt: userPrompt,
-          maxTokens: maxTokens,
-          temperature: temperature,
-        );
+    int attempts = 0;
+    DateTime startTime = DateTime.now();
+    
+    while (attempts < _maxRetries) {
+      attempts++;
+      print('尝试第 $attempts/$_maxRetries 次请求');
+      
+      try {
+        final currentModel = _apiConfig.getCurrentModel();
+        switch (currentModel.apiFormat) {
+          case 'OpenAI API兼容':
+            yield* _streamOpenAIAPI(
+              systemPrompt: systemPrompt,
+              userPrompt: userPrompt,
+              maxTokens: maxTokens,
+              temperature: temperature,
+            );
+            print('请求成功！');
+            print('耗时：${DateTime.now().difference(startTime).inSeconds}秒');
+            return;
+          case 'Google API':
+            yield* _streamGoogleAPI(
+              systemPrompt: systemPrompt,
+              userPrompt: userPrompt,
+              maxTokens: maxTokens,
+              temperature: temperature,
+            );
+            print('请求成功！');
+            print('耗时：${DateTime.now().difference(startTime).inSeconds}秒');
+            return;
+          default:
+            throw Exception('不支持的API格式：${currentModel.apiFormat}');
+        }
+      } catch (e) {
+        print('发生错误：$e');
+        if (attempts >= _maxRetries) {
+          print('达到最大重试次数，请求失败。');
+          rethrow;
+        }
+        await Future.delayed(_retryInterval);
+        continue;
+      }
     }
   }
 
@@ -74,65 +77,62 @@ class AIService extends GetxService {
     required String body,
     int retryCount = 0,
   }) async {
-    try {
-      final request = http.Request('POST', uri)
-        ..headers.addAll(headers)
-        ..body = body;
+    DateTime startTime = DateTime.now();
+    int attempts = 0;
 
-      final response = await _client.send(request).timeout(_timeout);
-      
-      if (response.statusCode == 200) {
-        return response;
-      } else if (response.statusCode >= 500 && retryCount < _maxRetries) {
-        // 服务器错误，尝试重试
-        await Future.delayed(Duration(seconds: 1 << retryCount));
-        return _postWithRetry(
-          uri: uri,
-          headers: headers,
-          body: body,
-          retryCount: retryCount + 1,
-        );
-      } else {
-        throw Exception('API 请求失败：${response.statusCode}');
+    while (attempts < _maxRetries) {
+      attempts++;
+      try {
+        final request = http.Request('POST', uri)
+          ..headers.addAll(headers)
+          ..body = body;
+
+        final response = await _client.send(request).timeout(_timeout);
+        
+        if (response.statusCode == 200) {
+          print('API请求成功！');
+          print('耗时：${DateTime.now().difference(startTime).inSeconds}秒');
+          return response;
+        } else if (response.statusCode >= 500 && attempts < _maxRetries) {
+          print('服务器错误，状态码：${response.statusCode}');
+          await Future.delayed(_retryInterval * attempts);  // 指数退避
+          continue;
+        } else {
+          throw Exception('API 请求失败：${response.statusCode}');
+        }
+      } catch (e) {
+        print('第$attempts次请求失败：$e');
+        if (attempts >= _maxRetries) {
+          print('达到最大重试次数，请求失败。');
+          rethrow;
+        }
+        await Future.delayed(_retryInterval * attempts);  // 指数退避
+        continue;
       }
-    } catch (e) {
-      if (retryCount < _maxRetries) {
-        // 网络错误，尝试重试
-        await Future.delayed(Duration(seconds: 1 << retryCount));
-        return _postWithRetry(
-          uri: uri,
-          headers: headers,
-          body: body,
-          retryCount: retryCount + 1,
-        );
-      }
-      rethrow;
     }
+    throw Exception('超过最大重试次数');
   }
 
-  Stream<String> _streamDeepseek({
+  Stream<String> _streamOpenAIAPI({
     required String systemPrompt,
     required String userPrompt,
     required int maxTokens,
     required double temperature,
-    required String model,
   }) async* {
-    final config = _apiConfig.getModelConfig(
-      model == 'deepseek-chat' ? AIModel.deepseekChat : AIModel.deepseek
-    );
+    final config = _apiConfig.getCurrentModel();
     if (config.apiKey.isEmpty) {
-      throw Exception('请先配置 Deepseek API Key');
+      throw Exception('请先配置 API Key');
     }
 
     try {
       final response = await _postWithRetry(
-        uri: Uri.parse('${config.apiUrl}/chat/completions'),
+        uri: Uri.parse('${config.apiUrl}${config.apiPath}'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${config.apiKey}',
+          'Authorization': config.apiKey.startsWith('Bearer ') ? config.apiKey : 'Bearer ${config.apiKey}',
         },
         body: jsonEncode({
-          'model': model,
+          'model': config.model,
           'messages': [
             {
               'role': 'system',
@@ -143,9 +143,13 @@ class AIService extends GetxService {
               'content': userPrompt,
             },
           ],
-          'temperature': temperature,
-          'max_tokens': maxTokens,
+          'parameters': {
+            'temperature': temperature,
+            'max_tokens': maxTokens,
+            'top_p': config.topP,
+          },
           'stream': true,
+          'user_id': config.appId,
         }),
       );
 
@@ -168,29 +172,29 @@ class AIService extends GetxService {
         }
       }
     } catch (e) {
-      print('Deepseek API error: $e');
+      print('API error: $e');
       rethrow;
     }
   }
 
-  Stream<String> _streamGeminiPro({
+  Stream<String> _streamGoogleAPI({
     required String systemPrompt,
     required String userPrompt,
     required int maxTokens,
     required double temperature,
   }) async* {
-    final config = _apiConfig.getModelConfig(AIModel.geminiPro);
+    final config = _apiConfig.getCurrentModel();
     if (config.apiKey.isEmpty) {
-      throw Exception('请先配置 Gemini API Key');
+      throw Exception('请先配置 API Key');
     }
 
     try {
-      final uri = Uri.parse('${config.apiUrl}/models/gemini-pro:streamGenerateContent');
+      final uri = Uri.parse('${config.apiUrl}${config.apiPath}');
       final request = http.Request('POST', uri);
       
       request.headers.addAll({
         'Content-Type': 'application/json',
-        'x-goog-api-key': config.apiKey,
+        'x-goog-api-key': config.apiKey.startsWith('Bearer ') ? config.apiKey.substring(7) : config.apiKey,
       });
 
       request.body = jsonEncode({
@@ -205,7 +209,7 @@ class AIService extends GetxService {
         'generationConfig': {
           'temperature': temperature,
           'maxOutputTokens': maxTokens,
-          'topP': 0.8,
+          'topP': config.topP,
           'topK': 40,
         },
       });
@@ -264,175 +268,7 @@ class AIService extends GetxService {
       if (e is TimeoutException) {
         throw Exception('生成超时，请重试');
       }
-      print('Gemini API error: $e');
-      rethrow;
-    }
-  }
-
-  Stream<String> _streamGeminiFlash({
-    required String systemPrompt,
-    required String userPrompt,
-    required int maxTokens,
-    required double temperature,
-  }) async* {
-    final config = _apiConfig.getModelConfig(AIModel.geminiFlash);
-    if (config.apiKey.isEmpty) {
-      throw Exception('请先配置 Gemini API Key');
-    }
-
-    try {
-      final uri = Uri.parse('${config.apiUrl}/models/gemini-1.5-flash:streamGenerateContent');
-      final request = http.Request('POST', uri);
-      
-      request.headers.addAll({
-        'Content-Type': 'application/json',
-        'x-goog-api-key': config.apiKey,
-      });
-
-      request.body = jsonEncode({
-        'contents': [
-          {
-            'role': 'user',
-            'parts': [
-              {'text': '$systemPrompt\n\n$userPrompt'}
-            ]
-          }
-        ],
-        'generationConfig': {
-          'temperature': temperature,
-          'maxOutputTokens': maxTokens,
-          'topP': 0.8,
-          'topK': 40,
-        },
-      });
-
-      final response = await _client.send(request).timeout(
-        const Duration(minutes: 5),
-        onTimeout: () {
-          throw TimeoutException('API 请求超时，请重试');
-        },
-      );
-      
-      if (response.statusCode != 200) {
-        final body = await response.stream.bytesToString();
-        throw Exception('生成失败：$body');
-      }
-
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        try {
-          if (chunk.trim().isEmpty) continue;
-
-          final lines = chunk.split('\n');
-          for (final line in lines) {
-            if (line.trim().isEmpty) continue;
-            if (line.startsWith('data: ')) {
-              final jsonStr = line.substring(6);
-              if (jsonStr == '[DONE]') continue;
-
-              try {
-                final json = jsonDecode(jsonStr);
-                if (json['candidates'] != null && json['candidates'].isNotEmpty) {
-                  final content = json['candidates'][0]['content'];
-                  if (content != null && content['parts'] != null) {
-                    final parts = content['parts'] as List;
-                    if (parts.isNotEmpty) {
-                      final text = parts[0]['text'] as String;
-                      if (text.isNotEmpty) {
-                        yield text;
-                      }
-                    }
-                  }
-                }
-              } catch (e) {
-                print('Error parsing JSON: $e');
-                print('JSON string: $jsonStr');
-                continue;
-              }
-            }
-          }
-        } catch (e) {
-          print('Error processing chunk: $e');
-          print('Chunk: $chunk');
-          continue;
-        }
-      }
-    } catch (e) {
-      if (e is TimeoutException) {
-        throw Exception('生成超时，请重试');
-      }
-      print('Gemini API error: $e');
-      rethrow;
-    }
-  }
-
-  Stream<String> _streamQwen({
-    required String systemPrompt,
-    required String userPrompt,
-    required int maxTokens,
-    required double temperature,
-  }) async* {
-    final config = _apiConfig.getModelConfig(AIModel.qwen);
-    if (config.apiKey.isEmpty) {
-      throw Exception('请先配置通义千问 API Key');
-    }
-
-    try {
-      final response = await _postWithRetry(
-        uri: Uri.parse('${config.apiUrl}/chat/completions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${config.apiKey}',
-        },
-        body: jsonEncode({
-          'model': 'qwen-turbo-2024-11-01',
-          'messages': [
-            {
-              'role': 'system',
-              'content': '''作为一个专业的小说创作助手,请遵循以下要求:
-1. 保持语言的多样性,避免重复使用相同的句式和词语
-2. 每个段落使用不同的表达方式,增加文本的可读性
-3. 合理使用修辞手法,让描写更加生动形象
-4. 注意情节发展的连贯性,避免重复的剧情
-5. 人物对话要有个性化的语言特点
-6. 场景描写要细致入微,避免千篇一律
-7. 情感表达要丰富多彩,不要局限于简单的词语
-8. 故事节奏要富有变化,避免平铺直叙
-请基于以上要求,创作出精彩的内容。''',
-            },
-            {
-              'role': 'user',
-              'content': userPrompt,
-            },
-          ],
-          'temperature': 0.9,
-          'max_tokens': maxTokens,
-          'top_p': 0.95,
-          'frequency_penalty': 0.5,
-          'presence_penalty': 0.5,
-          'stream': true,
-        }),
-      );
-
-      await for (final chunk in response.stream.transform(utf8.decoder).transform(const LineSplitter())) {
-        if (chunk.startsWith('data: ')) {
-          final data = chunk.substring(6);
-          if (data == '[DONE]') continue;
-          
-          try {
-            final json = jsonDecode(data);
-            final content = json['choices'][0]['delta']['content'] as String?;
-            if (content != null && content.isNotEmpty) {
-              yield content;
-            }
-          } catch (e) {
-            print('Error parsing chunk: $chunk');
-            print('Error: $e');
-            continue;
-          }
-        }
-      }
-    } catch (e) {
-      print('Qwen API error: $e');
+      print('API error: $e');
       rethrow;
     }
   }
@@ -445,7 +281,6 @@ class AIService extends GetxService {
     try {
       String response = '';
       await for (final chunk in generateTextStream(
-        model: _apiConfig.selectedModel.value,
         systemPrompt: '''作为一个专业的小说创作助手，请遵循以下创作原则：
 
 1. 故事逻辑：

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.6"
+        android:scaleY="0.6"
+        android:translateX="21.6"
+        android:translateY="21.6">
+        <!-- 背景圆形 -->
+        <path
+            android:fillColor="#2196F3"
+            android:pathData="M54,27C41.85,27 32,36.85 32,49C32,61.15 41.85,71 54,71C66.15,71 76,61.15 76,49C76,36.85 66.15,27 54,27Z"/>
+        
+        <!-- 书本形状 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M48,38V60H60C62.21,60 64,58.21 64,56V42C64,39.79 62.21,38 60,38H48ZM46,36H60C63.31,36 66,38.69 66,42V56C66,59.31 63.31,62 60,62H46V36Z"/>
+        
+        <!-- AI文字 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M51,44H53V54H51V44Z"/>
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M56,44H58V54H56V44Z"/>
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M51,42H58V44H51V42Z"/>
+    </group>
+</vector> 

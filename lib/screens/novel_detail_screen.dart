@@ -158,6 +158,7 @@ class NovelDetailController extends GetxController {
   final RxInt currentProcessingChapter = 0.obs;
   final reviewRequirementsController = TextEditingController();
   final _contentReviewService = Get.find<ContentReviewService>();
+  final _aiService = Get.find<AIService>();
 
   NovelDetailController(this.novel);
 
@@ -171,6 +172,14 @@ class NovelDetailController extends GetxController {
   void onClose() {
     reviewRequirementsController.dispose();
     super.onClose();
+  }
+
+  void updateGeneratingStatus(bool value) {
+    isGenerating.value = value;
+  }
+
+  void updatePausedStatus(bool value) {
+    isPaused.value = value;
   }
 
   Future<void> checkForUnfinishedTask() async {
@@ -263,7 +272,10 @@ class NovelDetailController extends GetxController {
         final reviewedContent = await _contentReviewService.reviewContent(
           content: chapter.content,
           style: '与原文风格一致',
-          model: Get.find<ApiConfigController>().selectedModel.value,
+          model: AIModel.values.firstWhere(
+            (m) => m.toString().split('.').last == Get.find<ApiConfigController>().selectedModelId.value,
+            orElse: () => AIModel.deepseek,
+          ),
         );
 
         novel.chapters[chapterIndex] = chapter.copyWith(content: reviewedContent);
@@ -341,6 +353,67 @@ class NovelDetailController extends GetxController {
     final sentences = content.split('。');
     if (sentences.length <= 3) return content;
     return sentences.take(3).join('。') + '。';
+  }
+
+  Future<void> generateContent() async {
+    if (isGenerating.value) return;
+    
+    try {
+      updateGeneratingStatus(true);
+      String response = '';
+      
+      await for (final chunk in _aiService.generateTextStream(
+        systemPrompt: '''作为一个专业的小说创作助手，请遵循以下创作原则：
+
+1. 故事逻辑：
+   - 确保因果关系清晰合理，事件发展有其必然性
+   - 人物行为要符合其性格特征和处境
+   - 情节转折要有铺垫，避免突兀
+   - 矛盾冲突的解决要符合逻辑
+   - 故事背景要前后一致，细节要互相呼应
+
+2. 叙事结构：
+   - 采用灵活多变的叙事手法，避免单一直线式发展
+   - 合理安排伏笔和悬念，让故事更有层次感
+   - 注意时间线的合理性，避免前后矛盾
+   - 场景转换要流畅自然，不生硬突兀
+   - 故事节奏要有张弛，紧凑处突出戏剧性
+
+3. 人物塑造：
+   - 赋予角色丰富的心理活动和独特性格
+   - 人物成长要符合其经历和环境
+   - 人物关系要复杂立体，互动要自然
+   - 对话要体现人物性格和身份特点
+   - 避免脸谱化和类型化的人物描写
+
+4. 环境描写：
+   - 场景描写要与情节和人物情感相呼应
+   - 细节要生动传神，突出关键特征
+   - 环境氛围要配合故事发展
+   - 感官描写要丰富多样
+   - 避免无关的环境描写，保持紧凑
+
+5. 语言表达：
+   - 用词准确生动，避免重复和陈词滥调
+   - 句式灵活多样，富有韵律感
+   - 善用修辞手法，但不过分堆砌
+   - 对话要自然流畅，符合说话人特点
+   - 描写要细腻传神，避免空洞''',
+        userPrompt: reviewRequirementsController.text,
+        maxTokens: 4000,
+        temperature: 0.7,
+      )) {
+        response += chunk;
+      }
+
+      // 处理生成的内容
+      // TODO: 根据实际需求处理生成的内容
+
+    } catch (e) {
+      Get.snackbar('错误', '生成失败：$e');
+    } finally {
+      updateGeneratingStatus(false);
+    }
   }
 }
 

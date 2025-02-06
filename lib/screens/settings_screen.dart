@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:novel_app/controllers/api_config_controller.dart';
-import 'package:novel_app/services/ai_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -14,6 +13,12 @@ class SettingsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('设置'),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () => _showAddModelDialog(context, controller),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Padding(
@@ -27,22 +32,47 @@ class SettingsScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '模型设置',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '模型设置',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => controller.resetToDefaults(),
+                            child: const Text('重置默认配置'),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 16),
-                      Obx(() => DropdownButtonFormField<AIModel>(
-                        value: controller.selectedModel.value,
+                      Obx(() => DropdownButtonFormField<String>(
+                        value: controller.selectedModelId.value,
                         decoration: const InputDecoration(
                           labelText: '选择模型',
+                          border: OutlineInputBorder(),
                         ),
-                        items: AIModel.values.map((model) => DropdownMenuItem(
-                          value: model,
-                          child: Text(controller.getModelName(model)),
+                        items: controller.models.map((model) => DropdownMenuItem(
+                          value: model.name,
+                          child: SizedBox(
+                            width: 300,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Expanded(child: Text(model.name)),
+                                if (model.isCustom)
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, size: 20),
+                                    onPressed: () {
+                                      controller.removeCustomModel(model.name);
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
                         )).toList(),
                         onChanged: (value) {
                           if (value != null) {
@@ -55,58 +85,358 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              Obx(() => Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${controller.getModelName(controller.selectedModel.value)} 配置',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+              Obx(() {
+                final currentModel = controller.getCurrentModel();
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${currentModel.name} 配置',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'API Key',
-                          hintText: '请输入您的 API Key',
+                        const SizedBox(height: 16),
+                        TextField(
+                          decoration: const InputDecoration(
+                            labelText: 'API Key',
+                            hintText: '请输入您的 API Key',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) => controller.updateModelConfig(
+                            currentModel.name,
+                            apiKey: value,
+                          ),
+                          controller: TextEditingController(
+                            text: currentModel.apiKey,
+                          ),
                         ),
-                        onChanged: (value) => controller.saveConfig(
-                          controller.selectedModel.value,
-                          apiKey: value,
+                        const SizedBox(height: 16),
+                        TextField(
+                          decoration: const InputDecoration(
+                            labelText: 'API URL',
+                            hintText: '请输入 API 服务器地址',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) => controller.updateModelConfig(
+                            currentModel.name,
+                            apiUrl: value,
+                          ),
+                          controller: TextEditingController(
+                            text: currentModel.apiUrl,
+                          ),
                         ),
-                        controller: TextEditingController(
-                          text: controller.getModelConfig(
-                            controller.selectedModel.value,
-                          ).apiKey,
+                        const SizedBox(height: 16),
+                        TextField(
+                          decoration: const InputDecoration(
+                            labelText: 'API 路径',
+                            hintText: '请输入 API 路径（如 /v1/chat/completions）',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) => controller.updateModelConfig(
+                            currentModel.name,
+                            apiPath: value,
+                          ),
+                          controller: TextEditingController(
+                            text: currentModel.apiPath,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'API URL',
-                          hintText: '请输入 API 服务器地址',
+                        const SizedBox(height: 16),
+                        TextField(
+                          decoration: const InputDecoration(
+                            labelText: '模型名称',
+                            hintText: '请输入具体的模型名称',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) => controller.updateModelConfig(
+                            currentModel.name,
+                            model: value,
+                          ),
+                          controller: TextEditingController(
+                            text: currentModel.model,
+                          ),
                         ),
-                        onChanged: (value) => controller.saveConfig(
-                          controller.selectedModel.value,
-                          apiUrl: value,
+                        const SizedBox(height: 16),
+                        TextField(
+                          decoration: const InputDecoration(
+                            labelText: 'App ID',
+                            hintText: '请输入应用ID（百度千帆等需要）',
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) => controller.updateModelConfig(
+                            currentModel.name,
+                            appId: value,
+                          ),
+                          controller: TextEditingController(
+                            text: currentModel.appId,
+                          ),
                         ),
-                        controller: TextEditingController(
-                          text: controller.getModelConfig(
-                            controller.selectedModel.value,
-                          ).apiUrl,
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: currentModel.apiFormat,
+                          decoration: const InputDecoration(
+                            labelText: 'API 格式',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'OpenAI API兼容',
+                              child: Text('OpenAI API兼容'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Google API',
+                              child: Text('Google API'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              controller.updateModelConfig(
+                                currentModel.name,
+                                apiFormat: value,
+                              );
+                            }
+                          },
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 24),
+                        const Text(
+                          '高级设置',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('温度 (Temperature)'),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Slider(
+                                    value: controller.temperature.value,
+                                    min: 0.0,
+                                    max: 2.0,
+                                    divisions: 20,
+                                    label: controller.temperature.value.toStringAsFixed(1),
+                                    onChanged: (value) => controller.updateTemperature(value),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 60,
+                                  child: Text(
+                                    controller.temperature.value.toStringAsFixed(1),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text('Top P'),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Slider(
+                                    value: controller.topP.value,
+                                    min: 0.0,
+                                    max: 1.0,
+                                    divisions: 10,
+                                    label: controller.topP.value.toStringAsFixed(1),
+                                    onChanged: (value) => controller.updateTopP(value),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 60,
+                                  child: Text(
+                                    controller.topP.value.toStringAsFixed(1),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text('最大生成长度'),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Slider(
+                                    value: controller.maxTokens.value.toDouble(),
+                                    min: 1000,
+                                    max: 8192,
+                                    divisions: 72,
+                                    label: controller.maxTokens.value.toString(),
+                                    onChanged: (value) => controller.updateMaxTokens(value.toInt()),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 80,
+                                  child: Text(
+                                    controller.maxTokens.value.toString(),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              )),
+                );
+              }),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showAddModelDialog(BuildContext context, ApiConfigController controller) {
+    final nameController = TextEditingController();
+    final apiKeyController = TextEditingController();
+    final apiUrlController = TextEditingController();
+    final apiPathController = TextEditingController();
+    final modelController = TextEditingController();
+    final appIdController = TextEditingController();
+    String selectedApiFormat = 'OpenAI API兼容';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('添加自定义模型'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: '模型名称',
+                  hintText: '请输入模型显示名称',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: apiKeyController,
+                decoration: const InputDecoration(
+                  labelText: 'API Key',
+                  hintText: '请输入 API Key',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: apiUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'API URL',
+                  hintText: '请输入 API 服务器地址',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: apiPathController,
+                decoration: const InputDecoration(
+                  labelText: 'API 路径',
+                  hintText: '如 /v1/chat/completions',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: modelController,
+                decoration: const InputDecoration(
+                  labelText: '模型标识符',
+                  hintText: '请输入具体的模型标识符',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: appIdController,
+                decoration: const InputDecoration(
+                  labelText: 'App ID',
+                  hintText: '请输入应用ID（百度千帆等需要）',
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: selectedApiFormat,
+                decoration: const InputDecoration(
+                  labelText: 'API 格式',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'OpenAI API兼容',
+                    child: Text('OpenAI API兼容'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Google API',
+                    child: Text('Google API'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    selectedApiFormat = value;
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (nameController.text.isEmpty) {
+                Get.snackbar(
+                  '提示',
+                  '请输入模型名称',
+                  backgroundColor: Colors.red.withOpacity(0.1),
+                  duration: const Duration(seconds: 2),
+                );
+                return;
+              }
+              
+              // 检查是否已存在同名模型
+              if (controller.models.any((m) => m.name == nameController.text)) {
+                Get.snackbar(
+                  '提示',
+                  '已存在同名模型，请使用其他名称',
+                  backgroundColor: Colors.red.withOpacity(0.1),
+                  duration: const Duration(seconds: 2),
+                );
+                return;
+              }
+
+              controller.addCustomModel(ModelConfig(
+                name: nameController.text,
+                apiKey: apiKeyController.text,
+                apiUrl: apiUrlController.text,
+                apiPath: apiPathController.text,
+                model: modelController.text,
+                appId: appIdController.text,
+                apiFormat: selectedApiFormat,
+                isCustom: true,
+              ));
+              
+              Get.back();
+              Get.snackbar(
+                '成功',
+                '模型添加成功',
+                backgroundColor: Colors.green.withOpacity(0.1),
+                duration: const Duration(seconds: 2),
+              );
+            },
+            child: const Text('添加'),
+          ),
+        ],
       ),
     );
   }

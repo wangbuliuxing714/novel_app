@@ -81,7 +81,6 @@ $content''';
     final buffer = StringBuffer();
     
     await for (final chunk in _aiService.generateTextStream(
-      model: model,
       systemPrompt: systemPrompt,
       userPrompt: userPrompt,
       maxTokens: 8100,
@@ -164,7 +163,6 @@ ${userRequirements != null ? '\n【用户特殊要求】\n$userRequirements' : '
     final buffer = StringBuffer();
     
     await for (final chunk in _aiService.generateTextStream(
-      model: model,
       systemPrompt: systemPrompt,
       userPrompt: userPrompt,
       maxTokens: 8000,

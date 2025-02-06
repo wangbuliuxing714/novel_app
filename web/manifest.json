@@ -1,11 +1,11 @@
 {
-    "name": "novel_app",
-    "short_name": "novel_app",
+    "name": "AI小说生成器",
+    "short_name": "AI小说",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#2196F3",
+    "description": "使用AI技术生成精彩小说",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -7,7 +7,7 @@ import 'package:novel_app/screens/home/home_screen.dart';
 import 'package:novel_app/screens/storage/storage_screen.dart';
 import 'package:novel_app/screens/chapter_detail/chapter_detail_screen.dart';
 import 'package:novel_app/screens/chapter_edit/chapter_edit_screen.dart';
-import 'package:novel_app/screens/realtime_editor/realtime_editor_screen.dart';
+import 'package:novel_app/screens/draft/draft_screen.dart';
 import 'package:novel_app/services/ai_service.dart';
 import 'package:novel_app/services/novel_generator_service.dart';
 import 'package:novel_app/models/prompt_template.dart';
@@ -18,10 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:novel_app/services/cache_service.dart';
 import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/controllers/theme_controller.dart';
-import 'package:novel_app/controllers/outline_controller.dart';
-import 'package:novel_app/controllers/editor_controller.dart';
-import 'package:novel_app/controllers/ai_advisor_controller.dart';
-import 'package:novel_app/controllers/chapter_add_controller.dart';
+import 'package:novel_app/controllers/draft_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,10 +42,7 @@ void main() async {
   Get.put(NovelGeneratorService(aiService, apiConfig, cacheService));
   Get.put(ContentReviewService(aiService, apiConfig, cacheService));
   Get.put(NovelController());
-  Get.put(OutlineController());
-  Get.put(EditorController());
-  Get.put(AIAdvisorController());
-  Get.put(ChapterAddController());
+  Get.put(DraftController());
   
   // 初始化公告服务
   final announcementService = Get.put(AnnouncementService());
@@ -87,7 +81,7 @@ class MyApp extends StatelessWidget {
         GetPage(name: '/storage', page: () => StorageScreen()),
         GetPage(name: '/chapter_detail', page: () => ChapterDetailScreen()),
         GetPage(name: '/chapter_edit', page: () => ChapterEditScreen()),
-        GetPage(name: '/realtime_editor', page: () => const RealtimeEditorScreen()),
+        GetPage(name: '/draft', page: () => DraftScreen()),
       ],
     );
   }

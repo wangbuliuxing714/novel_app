@@ -21,49 +21,8 @@ class HomeScreen extends GetView<NovelController> {
         title: const Text('岱宗文脉'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.favorite_border),
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => Dialog(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          '支持我们',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Image.asset(
-                          'assets/images/wechat_pay.png.jpg',
-                          height: 300,
-                          width: 300,
-                          fit: BoxFit.contain,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          '感谢您的支持!',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('关闭'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+            icon: const Icon(Icons.help_outline),
+            onPressed: () => Get.to(() => const HelpScreen()),
           ),
           IconButton(
             icon: const Icon(Icons.settings),
@@ -96,12 +55,11 @@ class HomeScreen extends GetView<NovelController> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('实时在线编辑'),
-              subtitle: const Text('多栏协同创作模式'),
+              leading: const Icon(Icons.edit_note),
+              title: const Text('草稿本'),
               onTap: () {
                 Get.back();
-                Get.toNamed('/realtime_editor');
+                Get.toNamed('/draft');
               },
             ),
             const Divider(),

@@ -3,58 +3,161 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:novel_app/services/ai_service.dart';
 
 class ModelConfig {
-  String apiKey;
-  String apiUrl;
+  String name;           // 模型名称
+  String apiKey;         // API密钥
+  String apiUrl;         // API地址
+  String apiPath;        // API路径
+  String model;          // 具体模型名称
+  String apiFormat;      // API格式（如OpenAI API兼容等）
+  String appId;          // 应用ID（百度千帆等需要）
+  bool isCustom;         // 是否为自定义模型
+  double temperature;
+  double topP;
+  int maxTokens;
 
   ModelConfig({
+    required this.name,
     required this.apiKey,
     required this.apiUrl,
+    required this.apiPath,
+    required this.model,
+    required this.apiFormat,
+    this.appId = '',
+    this.isCustom = false,
+    this.temperature = 0.7,
+    this.topP = 1.0,
+    this.maxTokens = 4000,
   });
 
   Map<String, dynamic> toJson() => {
+    'name': name,
     'apiKey': apiKey,
     'apiUrl': apiUrl,
+    'apiPath': apiPath,
+    'model': model,
+    'apiFormat': apiFormat,
+    'appId': appId,
+    'isCustom': isCustom,
+    'temperature': temperature,
+    'topP': topP,
+    'maxTokens': maxTokens,
   };
 
   factory ModelConfig.fromJson(Map<String, dynamic> json) => ModelConfig(
+    name: json['name'] as String? ?? '',
     apiKey: json['apiKey'] as String? ?? '',
     apiUrl: json['apiUrl'] as String? ?? '',
+    apiPath: json['apiPath'] as String? ?? '',
+    model: json['model'] as String? ?? '',
+    apiFormat: json['apiFormat'] as String? ?? 'OpenAI API兼容',
+    appId: json['appId'] as String? ?? '',
+    isCustom: json['isCustom'] as bool? ?? false,
+    temperature: (json['temperature'] as num?)?.toDouble() ?? 0.7,
+    topP: (json['topP'] as num?)?.toDouble() ?? 1.0,
+    maxTokens: (json['maxTokens'] as num?)?.toInt() ?? 4000,
   );
+
+  ModelConfig copyWith({
+    String? name,
+    String? apiKey,
+    String? apiUrl,
+    String? apiPath,
+    String? model,
+    String? apiFormat,
+    String? appId,
+    bool? isCustom,
+    double? temperature,
+    double? topP,
+    int? maxTokens,
+  }) {
+    return ModelConfig(
+      name: name ?? this.name,
+      apiKey: apiKey ?? this.apiKey,
+      apiUrl: apiUrl ?? this.apiUrl,
+      apiPath: apiPath ?? this.apiPath,
+      model: model ?? this.model,
+      apiFormat: apiFormat ?? this.apiFormat,
+      appId: appId ?? this.appId,
+      isCustom: isCustom ?? this.isCustom,
+      temperature: temperature ?? this.temperature,
+      topP: topP ?? this.topP,
+      maxTokens: maxTokens ?? this.maxTokens,
+    );
+  }
 }
 
 class ApiConfigController extends GetxController {
   static const _boxName = 'api_config';
+  static const _customModelsKey = 'custom_models';
   late final Box<dynamic> _box;
   
-  final Rx<AIModel> selectedModel = AIModel.geminiPro.obs;
-  final Map<AIModel, ModelConfig> _configs = {
-    AIModel.deepseek: ModelConfig(
+  final RxString selectedModelId = ''.obs;
+  final RxList<ModelConfig> models = <ModelConfig>[].obs;
+  final RxDouble temperature = 0.7.obs;
+  final RxDouble topP = 1.0.obs;
+  final RxInt maxTokens = 4000.obs;
+
+  final List<ModelConfig> _defaultModels = [
+    ModelConfig(
+      name: 'ChatGPT',
       apiKey: '',
-      apiUrl: 'https://api.deepseek.com/v1',
+      apiUrl: 'https://api.openai.com',
+      apiPath: '/v1/chat/completions',
+      model: 'gpt-4',
+      apiFormat: 'OpenAI API兼容',
     ),
-    AIModel.deepseekChat: ModelConfig(
+    ModelConfig(
+      name: '硅基流动 DeepSeek',
       apiKey: '',
-      apiUrl: 'https://api.deepseek.com/v1',
+      apiUrl: 'https://api.siliconflow.cn',
+      apiPath: '/v1/chat/completions',
+      model: 'deepseek-ai/DeepSeek-V3',
+      apiFormat: 'OpenAI API兼容',
     ),
-    AIModel.qwen: ModelConfig(
+    ModelConfig(
+      name: 'Deepseek',
       apiKey: '',
-      apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      apiUrl: 'https://api.deepseek.com',
+      apiPath: '/v1/chat/completions',
+      model: 'deepseek-reasoner',
+      apiFormat: 'OpenAI API兼容',
     ),
-    AIModel.geminiPro: ModelConfig(
+    ModelConfig(
+      name: '通义千问',
       apiKey: '',
-      apiUrl: 'https://generativelanguage.googleapis.com/v1',
+      apiUrl: 'https://dashscope.aliyuncs.com',
+      apiPath: '/compatible-mode/v1/chat/completions',
+      model: 'qwen-turbo-2024-11-01',
+      apiFormat: 'OpenAI API兼容',
     ),
-    AIModel.geminiFlash: ModelConfig(
+    ModelConfig(
+      name: '百度千帆',
       apiKey: '',
-      apiUrl: 'https://generativelanguage.googleapis.com/v1',
+      apiUrl: 'https://qianfan.baidubce.com',
+      apiPath: '/v2/chat/completions',
+      model: 'deepseek-v3',
+      apiFormat: 'OpenAI API兼容',
+      appId: '',
     ),
-  };
+    ModelConfig(
+      name: 'Gemini Pro',
+      apiKey: '',
+      apiUrl: 'https://generativelanguage.googleapis.com',
+      apiPath: '/v1/models/gemini-pro:streamGenerateContent',
+      model: 'gemini-pro',
+      apiFormat: 'Google API',
+    ),
+  ];
 
   @override
   void onInit() async {
     super.onInit();
     await _initHive();
-    _loadConfigs();
+    _loadModels();
+    if (models.isNotEmpty) {
+      selectedModelId.value = models[0].name;
+      _updateCurrentModelConfig();
+    }
   }
 
   Future<void> _initHive() async {
@@ -62,73 +165,133 @@ class ApiConfigController extends GetxController {
     _box = await Hive.openBox(_boxName);
   }
 
-  void _loadConfigs() {
-    for (final model in AIModel.values) {
-      final key = model.toString();
-      final savedConfig = _box.get(key);
+  void _loadModels() {
+    // 加载默认模型
+    models.addAll(_defaultModels);
+
+    // 加载自定义模型
+    final savedCustomModels = _box.get(_customModelsKey);
+    if (savedCustomModels != null) {
+      final customModels = (savedCustomModels as List)
+          .map((e) => ModelConfig.fromJson(Map<String, dynamic>.from(e)))
+          .where((model) => model.isCustom)
+          .toList();
+      models.addAll(customModels);
+    }
+
+    // 加载每个模型的配置
+    for (var i = 0; i < models.length; i++) {
+      final savedConfig = _box.get(models[i].name);
       if (savedConfig != null) {
-        _configs[model] = ModelConfig.fromJson(Map<String, dynamic>.from(savedConfig));
+        models[i] = ModelConfig.fromJson(Map<String, dynamic>.from(savedConfig));
       }
     }
   }
 
-  String getModelName(AIModel model) {
-    switch (model) {
-      case AIModel.deepseek:
-        return 'Deepseek Reasoner';
-      case AIModel.deepseekChat:
-        return 'Deepseek Chat';
-      case AIModel.qwen:
-        return '通义千问';
-      case AIModel.geminiPro:
-        return 'Gemini Pro';
-      case AIModel.geminiFlash:
-        return 'Gemini 1.5 Flash';
+  void _updateCurrentModelConfig() {
+    final config = getCurrentModel();
+    temperature.value = config.temperature;
+    topP.value = config.topP;
+    maxTokens.value = config.maxTokens;
+  }
+
+  ModelConfig getCurrentModel() {
+    return models.firstWhere((m) => m.name == selectedModelId.value);
+  }
+
+  void updateSelectedModel(String modelName) {
+    selectedModelId.value = modelName;
+    _updateCurrentModelConfig();
+  }
+
+  void updateTemperature(double value) {
+    temperature.value = value;
+    _saveCurrentConfig();
+  }
+
+  void updateTopP(double value) {
+    topP.value = value;
+    _saveCurrentConfig();
+  }
+
+  void updateMaxTokens(int value) {
+    maxTokens.value = value;
+    _saveCurrentConfig();
+  }
+
+  Future<void> addCustomModel(ModelConfig model) async {
+    model.isCustom = true;
+    models.add(model);
+    await _saveCustomModels();
+    await _box.put(model.name, model.toJson());
+  }
+
+  Future<void> removeCustomModel(String modelName) async {
+    models.removeWhere((m) => m.name == modelName && m.isCustom);
+    await _saveCustomModels();
+    await _box.delete(modelName);
+    if (selectedModelId.value == modelName) {
+      selectedModelId.value = models.first.name;
+      _updateCurrentModelConfig();
     }
   }
 
-  String getModelDescription(AIModel model) {
-    switch (model) {
-      case AIModel.deepseek:
-        return '开源大模型，无AI味，价格高';
-      case AIModel.deepseekChat:
-        return '开源大模型，擅长对话和创作';
-      case AIModel.qwen:
-        return '阿里云通义千问，支持中文创作';
-      case AIModel.geminiPro:
-        return 'Google Gemini Pro，支持多语言创作';
-      case AIModel.geminiFlash:
-        return 'Google Gemini 1.5 Flash，更快的生成速度';
+  Future<void> updateModelConfig(String modelName, {
+    String? apiKey,
+    String? apiUrl,
+    String? apiPath,
+    String? model,
+    String? apiFormat,
+    String? appId,
+  }) async {
+    final index = models.indexWhere((m) => m.name == modelName);
+    if (index != -1) {
+      models[index] = models[index].copyWith(
+        apiKey: apiKey,
+        apiUrl: apiUrl,
+        apiPath: apiPath,
+        model: model,
+        apiFormat: apiFormat,
+        appId: appId,
+      );
+      await _box.put(modelName, models[index].toJson());
     }
   }
 
-  ModelConfig getModelConfig(AIModel model) {
-    return _configs[model]!;
+  Future<void> _saveCustomModels() async {
+    final customModels = models
+        .where((m) => m.isCustom)
+        .map((m) => m.toJson())
+        .toList();
+    await _box.put(_customModelsKey, customModels);
   }
 
-  void updateSelectedModel(AIModel model) {
-    selectedModel.value = model;
-  }
-
-  Future<void> saveConfig(AIModel model, {String? apiKey, String? apiUrl}) async {
-    final config = _configs[model]!;
-    
-    if (apiKey != null) {
-      config.apiKey = apiKey;
+  Future<void> _saveCurrentConfig() async {
+    final index = models.indexWhere((m) => m.name == selectedModelId.value);
+    if (index != -1) {
+      models[index] = models[index].copyWith(
+        temperature: temperature.value,
+        topP: topP.value,
+        maxTokens: maxTokens.value,
+      );
+      await _box.put(selectedModelId.value, models[index].toJson());
     }
-    if (apiUrl != null) {
-      config.apiUrl = apiUrl;
-    }
-
-    await _box.put(model.toString(), config.toJson());
   }
 
   // 重置为默认配置
   Future<void> resetToDefaults() async {
-    final config = _configs[AIModel.deepseek]!;
-    config.apiUrl = 'https://api.deepseek.com/v1';
-    config.apiKey = '';
-    await _box.put(AIModel.deepseek.toString(), config.toJson());
-    selectedModel.value = AIModel.deepseek;
+    // 删除所有自定义模型
+    final customModels = models.where((m) => m.isCustom).toList();
+    for (final model in customModels) {
+      await _box.delete(model.name);
+    }
+    models.removeWhere((m) => m.isCustom);
+    await _box.delete(_customModelsKey);
+
+    // 重置默认模型配置
+    models.clear();
+    models.addAll(_defaultModels);
+    selectedModelId.value = models[0].name;
+    _updateCurrentModelConfig();
   }
 } 

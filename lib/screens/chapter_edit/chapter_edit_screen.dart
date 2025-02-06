@@ -26,6 +26,8 @@ class _ChapterEditScreenState extends State<ChapterEditScreen> {
   final _focusNode = FocusNode();
   bool _hasChanges = false;
   TextSelection? _lastSelection;
+  bool _isGenerating = false;
+  final _prompt = '';
 
   @override
   void initState() {
@@ -272,7 +274,6 @@ $prompt''';
 
       String modifiedText = '';
       await for (final chunk in _aiService.generateTextStream(
-        model: _apiConfig.selectedModel.value,
         systemPrompt: systemPrompt,
         userPrompt: userPrompt,
         maxTokens: 2000,
@@ -301,6 +302,72 @@ $prompt''';
         backgroundColor: Colors.red.withOpacity(0.1),
         duration: const Duration(seconds: 3),
       );
+    }
+  }
+
+  Future<void> _generateContent() async {
+    setState(() {
+      _isGenerating = true;
+    });
+
+    try {
+      String response = '';
+      await for (final chunk in _aiService.generateTextStream(
+        systemPrompt: '''你是一位经验丰富的网络小说作家，擅长创作各类爽文网文。作为专业的爽文写手，你需要遵循以下要求：
+
+1. 专业性增强（最重要）：
+   - 根据不同场景准确使用专业术语和行话
+   - 战斗场景：具体的招式名称、力道参数（如："一记迅猛的直拳，力道达到2.3吨"）
+   - 修炼场景：详细的境界划分、具体的能量数值（如："灵力浓度达到367ppm"）
+   - 商战场景：准确的金融术语、具体的数据指标（如："季度ROI达到37.8%"）
+   - 科技场景：精确的技术参数、具体的型号规格（如："量子计算机的相干时间达到97微秒"）
+
+2. 感官沉浸（重要）：
+   - 视觉：不仅写"看到"，还要有光影、色彩、动态的细节
+   - 听觉：环境音、对话音、心跳声等声音的层次感
+   - 触觉：温度、质地、压力等触感的具体描述
+   - 嗅觉：空气中的气味变化、情绪带来的微妙气息
+   - 味觉：当场景涉及饮食，详细描写味道层次
+   - 多感官联动：在关键场景同时调动3种以上感官
+
+3. 叙事纵深：
+   - 时间线交织：现在、回忆、预示三条线并行
+   - 空间层次：近景、中景、远景的场景切换
+   - 视角转换：适时切换第一人称、第三人称、全知视角
+   - 因果链条：每个情节都要埋下后续发展的伏笔
+   - 情感递进：通过细节暗示情感变化，避免直白表达
+
+4. 写作技巧：
+   - 场景细节要生动形象
+   - 打斗场面要有张力
+   - 对话要简洁有力
+   - 保持节奏紧凑
+   - 增加诙谐元素
+
+5. 注意事项：
+   - 保持人物性格一致性
+   - 注意前后文的连贯性
+   - 避免重复性内容
+   - 直接返回小说内容，不需要解释说明''',
+        userPrompt: _prompt,
+      )) {
+        setState(() {
+          response += chunk;
+          _contentController.text = response;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+        });
+      }
     }
   }
 

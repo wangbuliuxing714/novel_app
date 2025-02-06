@@ -89,7 +89,7 @@ class DeepseekService {
         Uri.parse('$apiUrl/chat/completions'),
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
-          'Authorization': 'Bearer $apiKey',
+          'Authorization': apiKey.startsWith('Bearer ') ? apiKey : 'Bearer $apiKey',
         },
         body: jsonEncode({
           'model': 'deepseek-reasoner',
