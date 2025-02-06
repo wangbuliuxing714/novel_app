@@ -6,6 +6,7 @@ import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/models/genre_category.dart';
 import 'package:novel_app/services/novel_generator_service.dart';
 import 'package:novel_app/services/cache_service.dart';
+import 'package:novel_app/services/export_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -13,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 class NovelController extends GetxController {
   final _novelGenerator = Get.find<NovelGeneratorService>();
   final _cacheService = Get.find<CacheService>();
+  final _exportService = ExportService();
   final novels = <Novel>[].obs;
   
   final title = ''.obs;
@@ -182,28 +184,11 @@ class NovelController extends GetxController {
         return '没有可导出的章节';
       }
 
-      final directory = await getApplicationDocumentsDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = 'novel_export_$timestamp.txt';
-      final file = File('${directory.path}/$fileName');
-
-      final buffer = StringBuffer();
-      buffer.writeln('标题：${title.value}\n');
-      for (final chapter in _generatedChapters) {
-        buffer.writeln('第${chapter.number}章：${chapter.title}\n');
-        buffer.writeln(chapter.content);
-        buffer.writeln('\n' + '=' * 50 + '\n');
-      }
-
-      await file.writeAsString(buffer.toString());
-      
-      // 使用 share_plus 来分享文件
-      final result = await Share.shareXFiles(
-        [XFile(file.path)],
-        text: '导出的小说：${title.value}',
+      return await _exportService.exportChapters(
+        _generatedChapters,
+        'txt',  // 默认使用txt格式
+        title: title.value,
       );
-      
-      return '文件已准备好，请选择保存位置';
     } catch (e) {
       return '导出失败：$e';
     }
