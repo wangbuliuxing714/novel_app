@@ -22,6 +22,10 @@ import 'package:novel_app/controllers/theme_controller.dart';
 import 'package:novel_app/controllers/draft_controller.dart';
 import 'package:novel_app/services/license_service.dart';
 import 'package:novel_app/screens/license_screen.dart';
+import 'package:novel_app/controllers/genre_controller.dart';
+import 'package:novel_app/screens/genre_manager_screen.dart';
+import 'package:novel_app/controllers/style_controller.dart';
+import 'package:novel_app/controllers/outline_prompt_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +33,7 @@ void main() async {
   // 初始化 Hive
   await Hive.initFlutter();
 
-  // 初始化SharedPreferences
+  // 初始化SharedPreferences（确保最先初始化）
   final prefs = await SharedPreferences.getInstance();
   Get.put(prefs);
   
@@ -41,11 +45,18 @@ void main() async {
   final aiService = Get.put(AIService(apiConfig));
   final cacheService = Get.put(CacheService(prefs));
   
-  // 注入依赖服务
+  // 先初始化OutlinePromptController
+  final outlinePromptController = OutlinePromptController();
+  await outlinePromptController.init();
+  Get.put(outlinePromptController);
+  
+  // 然后初始化其他依赖服务
   Get.put(NovelGeneratorService(aiService, apiConfig, cacheService));
   Get.put(ContentReviewService(aiService, apiConfig, cacheService));
   Get.put(NovelController());
   Get.put(DraftController());
+  Get.put(GenreController());
+  Get.put(StyleController());
   
   // 初始化公告服务
   final announcementService = Get.put(AnnouncementService());

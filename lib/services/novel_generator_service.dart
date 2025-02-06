@@ -9,11 +9,13 @@ import 'package:novel_app/services/content_review_service.dart';
 import 'package:novel_app/screens/outline_preview_screen.dart';
 import 'package:novel_app/services/cache_service.dart';
 import 'package:novel_app/controllers/novel_controller.dart';
+import 'package:novel_app/controllers/outline_prompt_controller.dart';
 
 class NovelGeneratorService extends GetxService {
   final AIService _aiService;
   final ApiConfigController _apiConfig;
   final CacheService _cacheService;
+  final _outlineController = Get.find<OutlinePromptController>();
   final void Function(String)? onProgress;
   final String targetReaders = "青年读者";
   final RxList<String> _generatedParagraphs = <String>[].obs;
@@ -63,24 +65,72 @@ class NovelGeneratorService extends GetxService {
   }) async {
     try {
       _updateProgress("正在生成大纲...");
-      final outline = await _generateOutlineContent(title, [genre], theme, totalChapters);
+      
+      // 每次生成的章节数
+      const int batchSize = 20;
+      final StringBuffer fullOutline = StringBuffer();
+      
+      // 分批生成大纲
+      for (int start = 1; start <= totalChapters; start += batchSize) {
+        final int end = (start + batchSize - 1) > totalChapters ? totalChapters : (start + batchSize - 1);
+        _updateProgress("正在生成第 $start 至 $end 章的大纲...");
+        
+        // 获取已生成的大纲内容作为上下文
+        String existingOutline = fullOutline.toString();
+        
+        final batchOutline = await _generateOutlineContent(
+          title,
+          [genre],
+          theme,
+          totalChapters,
+          start,
+          end,
+          existingOutline,
+        );
+        
+        fullOutline.write(batchOutline);
+        
+        // 如果不是最后一批，等待一下再继续
+        if (end < totalChapters) {
+          await Future.delayed(const Duration(seconds: 2));
+        }
+      }
       
       // 显示全屏预览对话框
       final confirmedOutline = await Get.to(() => OutlinePreviewScreen(
-        outline: outline,
+        outline: fullOutline.toString(),
         onOutlineConfirmed: (String modifiedOutline) {
           Get.back(result: modifiedOutline);
         },
       ));
       
-      return confirmedOutline ?? outline;
+      return confirmedOutline ?? fullOutline.toString();
     } catch (e) {
       _updateProgress("大纲生成失败");
       rethrow;
     }
   }
 
-  Future<String> _generateOutlineContent(String title, List<String> genres, String theme, int chapterCount) async {
+  Future<String> _generateOutlineContent(
+    String title,
+    List<String> genres,
+    String theme,
+    int totalChapters,
+    int startChapter,
+    int endChapter,
+    String existingOutline,
+  ) async {
+    // 使用选中的提示词模板
+    String template = _outlineController.currentTemplate;
+    
+    // 替换变量
+    template = template
+      .replaceAll('{title}', title)
+      .replaceAll('{genre}', genres[0])
+      .replaceAll('{theme}', theme)
+      .replaceAll('{target_readers}', targetReaders)
+      .replaceAll('{total_chapters}', totalChapters.toString());
+
     final genrePrompt = GenrePrompts.getPromptByGenre(genres[0]);
     final systemPrompt = '''【重要提示】
 在开始生成内容之前：
@@ -90,46 +140,35 @@ class NovelGeneratorService extends GetxService {
 4. 如果对某条规则有疑问，请按最严格的标准执行
 
 【核心原则】
-你是一位极具创造力的小说家。请遵循以下原则：
+你是一位专业的小说大纲策划师。请遵循以下原则：
 
-1. 严格遵循大纲（最高优先级）：
-   - 每一章节必须完全按照大纲设定的情节发展来写作
-   - 每个情节点都要与大纲保持一致
-   - 禁止偏离大纲设定的主要情节走向
-   - 确保所有关键剧情都按大纲展开
-   - 细节可以发挥但不能违背大纲精神
+1. 严格遵循已有大纲的风格和设定：
+   - 必须与已生成的大纲保持一致性
+   - 延续已有的情节发展方向
+   - 保持人物性格和设定的统一
+   - 注意前后章节的关联性
+   - 合理设置伏笔和呼应
 
-2. 上下文连贯性（第二优先级）：
-   - 必须仔细阅读前文内容，保持情节连贯
-   - 人物性格、行为必须与前文一致
-   - 所有新情节必须建立在已有内容基础上
-   - 禁止出现与前文矛盾的描写
-   - 新增内容必须考虑前文铺垫
+2. 章节规划（最高优先级）：
+   - 每个章节都要有明确的主题
+   - 情节要循序渐进
+   - 设置适当的悬念
+   - 注意前后呼应
+   - 保持节奏的变化
 
-3. 严格禁止重复：
-   - 绝对禁止连续或相近段落出现相似内容
-   - 每个段落必须包含全新信息
-   - 禁止使用相似句式和词组
-   - 实时检查并删除任何重复描写
-   - 确保每个场景都有独特元素
+3. 情节设计：
+   - 每个章节都要有独特的看点
+   - 避免情节重复
+   - 保持合理的起伏
+   - 设置适当的冲突
+   - 注意细节的连贯性
 
-4. 情节要求：
-   - 故事情节必须围绕用户提供的具体要求展开
-   - 每个章节都要有明确的情节推进
-   - 前后章节要有合理的逻辑连接
-   - 为每个章节设计独特的看点
-
-5. 大纲格式：
-   - 为每一章设计具体的标题
-   - 详细描述每章的主要内容
-   - 标注每章的重点情节和关键场景
-   - 注明章节间的关联和伏笔
-
-6. 整体结构：
-   - 合理安排情节起伏
-   - 设置适当的悬念和转折
-   - 故事节奏要富有变化
-   - 确保整体情节的完整性
+4. 整体结构：
+   - 注意与总体框架的呼应
+   - 为后续发展预留空间
+   - 保持故事节奏的变化
+   - 设置恰当的转折点
+   - 为高潮做好铺垫
 
 类型参考：
 ${genrePrompt}
@@ -139,38 +178,27 @@ ${theme}
 
 请记住：你不能更改用户指定的任何角色名称和基本设定。''';
 
-    final userPrompt = '''请为一部题为"$title"的${genres[0]}小说创作详细的章节大纲，总计${chapterCount}章。
+    final userPrompt = '''请为这部小说继续创作第$startChapter章到第$endChapter章的详细大纲。
+
+已有的大纲内容：
+${existingOutline.isEmpty ? '这是第一部分大纲' : existingOutline}
 
 创作要求：
-$theme
+1. 必须与已有大纲保持连贯性和一致性
+2. 每章都要有明确的主题和情节推进
+3. 注意与前文的呼应和伏笔
+4. 为后续章节预留发展空间
+5. 符合${genres[0]}类型的特点
 
-目标读者：$targetReaders
-
-具体要求：
-1. 为每一章设计：
-   - 吸引人的标题
-   - 详细的情节概要（600字左右）
-   - 重点场景和关键对话
-   - 与其他章节的关联
-
-2. 章节设计要求：
-   - 每章都要有清晰的主题
-   - 情节要循序渐进
-   - 设置适当的悬念
-   - 注意前后呼应
-
-3. 格式要求：
-第1章：章节标题
+格式要求：
+第N章：章节标题
 - 情节概要：
 - 重点场景：
 - 关键人物：
 - 重要伏笔：
 
-第2章：章节标题
-...（以此类推，直到第${chapterCount}章）
-
 请确保：
-1. 完整输出${chapterCount}章的大纲
+1. 完整输出第$startChapter章到第$endChapter章的大纲
 2. 每章都有详细内容
 3. 章节之间逻辑连贯
 4. 符合用户要求和${genres[0]}类型特点''';
@@ -181,7 +209,7 @@ $theme
     await for (final chunk in _aiService.generateTextStream(
       systemPrompt: systemPrompt,
       userPrompt: userPrompt,
-      maxTokens: 8000,  // 修改为8000 tokens
+      maxTokens: 8000,
       temperature: 0.7,
     )) {
       buffer.write(chunk);
@@ -189,24 +217,19 @@ $theme
     }
 
     // 解析和格式化大纲
-    final formattedOutline = _formatOutline(buffer.toString(), chapterCount);
+    final formattedOutline = _formatOutline(buffer.toString(), startChapter, endChapter);
     return formattedOutline;
   }
 
-  String _formatOutline(String rawOutline, int totalChapters) {
+  String _formatOutline(String rawOutline, int startChapter, int endChapter) {
     final buffer = StringBuffer();
     final chapters = rawOutline.split(RegExp(r'第\d+章'));
-    
-    // 添加总体说明
-    buffer.writeln('【小说大纲】');
-    buffer.writeln('总章节数：$totalChapters');
-    buffer.writeln();
     
     // 格式化每章大纲
     for (int i = 1; i <= chapters.length; i++) {
       if (i >= chapters.length) break;
       final chapter = chapters[i].trim();
-      buffer.writeln('第${i}章：${_extractChapterTitle(chapter)}');
+      buffer.writeln('第${startChapter + i - 1}章：${_extractChapterTitle(chapter)}');
       buffer.writeln(_formatChapterOutline(chapter));
       buffer.writeln();
     }

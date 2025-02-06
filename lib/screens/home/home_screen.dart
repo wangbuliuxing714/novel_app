@@ -8,6 +8,10 @@ import 'package:novel_app/screens/settings_screen.dart';
 import 'package:novel_app/screens/prompt_management_screen.dart';
 import 'package:novel_app/screens/help_screen.dart';
 import 'package:novel_app/controllers/theme_controller.dart';
+import 'package:novel_app/screens/genre_manager_screen.dart';
+import 'package:novel_app/controllers/genre_controller.dart';
+import 'package:novel_app/screens/module_repository_screen.dart';
+import 'package:novel_app/controllers/style_controller.dart';
 
 class HomeScreen extends GetView<NovelController> {
   const HomeScreen({super.key});
@@ -18,8 +22,13 @@ class HomeScreen extends GetView<NovelController> {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('岱宗文脉'),
+        title: const Text('AI小说生成器'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.apps),
+            tooltip: '模块仓库',
+            onPressed: () => Get.to(() => const ModuleRepositoryScreen()),
+          ),
           IconButton(
             icon: const Icon(Icons.help_outline),
             onPressed: () => Get.to(() => const HelpScreen()),
@@ -273,12 +282,12 @@ class HomeScreen extends GetView<NovelController> {
                 decoration: const InputDecoration(
                   labelText: '写作风格',
                 ),
-                items: const [
-                  DropdownMenuItem(value: '硬核爽文', child: Text('硬核爽文')),
-                  DropdownMenuItem(value: '轻松幽默', child: Text('轻松幽默')),
-                  DropdownMenuItem(value: '严肃正经', child: Text('严肃正经')),
-                  DropdownMenuItem(value: '悬疑烧脑', child: Text('悬疑烧脑')),
-                ],
+                items: Get.find<StyleController>().styles
+                    .map((style) => DropdownMenuItem(
+                          value: style.name,
+                          child: Text(style.name),
+                        ))
+                    .toList(),
                 onChanged: (value) => controller.updateStyle(value!),
               ),
             ),
@@ -345,6 +354,8 @@ class HomeScreen extends GetView<NovelController> {
   }
 
   Widget _buildGenreSelector() {
+    final genreController = Get.find<GenreController>();
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -356,31 +367,33 @@ class HomeScreen extends GetView<NovelController> {
           ),
         ),
         const SizedBox(height: 8),
-        ...GenreCategories.categories.map((category) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                category.name,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+        Obx(() => Column(
+          children: genreController.categories.map((category) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  category.name,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-            ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: category.genres.map((genre) => Obx(() => FilterChip(
-                label: Text(genre.name),
-                selected: controller.selectedGenres.contains(genre.name),
-                onSelected: (_) => controller.toggleGenre(genre.name),
-              ))).toList(),
-            ),
-            const SizedBox(height: 8),
-          ],
-        )).toList(),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: category.genres.map((genre) => Obx(() => FilterChip(
+                  label: Text(genre.name),
+                  selected: controller.selectedGenres.contains(genre.name),
+                  onSelected: (_) => controller.toggleGenre(genre.name),
+                ))).toList(),
+              ),
+              const SizedBox(height: 8),
+            ],
+          )).toList(),
+        )),
         Obx(() => controller.selectedGenres.isNotEmpty
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
