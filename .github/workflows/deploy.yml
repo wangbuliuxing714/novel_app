@@ -11,9 +11,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-        with:
-          persist-credentials: false
-      
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.16.9'
@@ -28,26 +25,8 @@ jobs:
       - name: Build
         run: flutter build web --release --base-href /novel_app/
         
-      - name: Clean repository
-        run: |
-          rm -rf .github/
-          rm -rf android/
-          rm -rf ios/
-          rm -rf linux/
-          rm -rf macos/
-          rm -rf windows/
-          rm -rf lib/
-          rm -rf test/
-          rm -f .gitignore
-          rm -f pubspec.yaml
-          rm -f pubspec.lock
-          rm -f README.md
-          mv build/web/* .
-          rm -rf build/
-        
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
-          force_orphan: true 
+          publish_dir: ./build/web 
