@@ -31,16 +31,24 @@ class AIService extends GetxService {
     int attempts = 0;
     DateTime startTime = DateTime.now();
     
+    print('开始生成文本流');
+    print('运行环境: ${_isWeb ? 'Web' : 'Native'}');
+    
     while (attempts < _maxRetries) {
       attempts++;
       print('尝试第 $attempts/$_maxRetries 次请求');
       
       try {
         final currentModel = _apiConfig.getCurrentModel();
+        print('当前模型: ${currentModel.model}');
+        print('API格式: ${currentModel.apiFormat}');
+        
         switch (currentModel.apiFormat) {
           case 'OpenAI API兼容':
             yield '正在连接 AI 服务...\n';
+            print('使用 OpenAI 兼容API');
             if (_isWeb) {
+              print('使用Web专用流处理');
               yield* _streamOpenAIAPIWeb(
                 systemPrompt: systemPrompt,
                 userPrompt: userPrompt,
@@ -48,6 +56,7 @@ class AIService extends GetxService {
                 temperature: temperature,
               );
             } else {
+              print('使用原生流处理');
               yield* _streamOpenAIAPI(
                 systemPrompt: systemPrompt,
                 userPrompt: userPrompt,
@@ -60,7 +69,9 @@ class AIService extends GetxService {
             return;
           case 'Google API':
             yield '正在连接 Google AI 服务...\n';
+            print('使用 Google API');
             if (_isWeb) {
+              print('使用Web专用流处理');
               yield* _streamGoogleAPIWeb(
                 systemPrompt: systemPrompt,
                 userPrompt: userPrompt,
@@ -68,6 +79,7 @@ class AIService extends GetxService {
                 temperature: temperature,
               );
             } else {
+              print('使用原生流处理');
               yield* _streamGoogleAPI(
                 systemPrompt: systemPrompt,
                 userPrompt: userPrompt,
@@ -83,6 +95,8 @@ class AIService extends GetxService {
         }
       } catch (e) {
         print('发生错误：$e');
+        print('错误堆栈：${StackTrace.current}');
+        
         if (e is TimeoutException) {
           yield '请求超时，正在重试...\n';
         } else {
@@ -320,58 +334,82 @@ class AIService extends GetxService {
     }
 
     try {
-      final response = await _postWithRetry(
-        uri: Uri.parse('${config.apiUrl}${config.apiPath}'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': config.apiKey.startsWith('Bearer ') ? config.apiKey : 'Bearer ${config.apiKey}',
-        },
-        body: jsonEncode({
-          'model': config.model,
-          'messages': [
-            {
-              'role': 'system',
-              'content': systemPrompt,
-            },
-            {
-              'role': 'user',
-              'content': userPrompt,
-            },
-          ],
-          'parameters': {
-            'temperature': temperature,
-            'max_tokens': maxTokens,
-            'top_p': config.topP,
-          },
-          'stream': true,
-          'user_id': config.appId,
-        }),
-      );
+      // 添加 CORS 和流式传输相关的 headers
+      final headers = {
+        'Content-Type': 'application/json',
+        'Authorization': config.apiKey.startsWith('Bearer ') ? config.apiKey : 'Bearer ${config.apiKey}',
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      };
 
-      // Web 平台特殊处理
-      final reader = StreamReader(response.stream);
-      while (true) {
-        final data = await reader.readLine();
-        if (data == null || data.isEmpty) continue;
-        if (data == 'data: [DONE]') break;
-        
-        if (data.startsWith('data: ')) {
-          try {
-            final jsonStr = data.substring(6);
-            final json = jsonDecode(jsonStr);
-            final content = json['choices'][0]['delta']['content'] as String?;
-            if (content != null && content.isNotEmpty) {
-              yield content;
+      if (_isWeb) {
+        headers['Access-Control-Allow-Origin'] = '*';
+        headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
+        headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
+      }
+
+      final request = http.Request('POST', Uri.parse('${config.apiUrl}${config.apiPath}'));
+      request.headers.addAll(headers);
+      request.body = jsonEncode({
+        'model': config.model,
+        'messages': [
+          {
+            'role': 'system',
+            'content': systemPrompt,
+          },
+          {
+            'role': 'user',
+            'content': userPrompt,
+          },
+        ],
+        'stream': true,
+        'temperature': temperature,
+        'max_tokens': maxTokens,
+        'top_p': config.topP,
+      });
+
+      final response = await _client.send(request);
+      
+      if (response.statusCode != 200) {
+        final error = await response.stream.bytesToString();
+        throw Exception('API请求失败: $error');
+      }
+
+      // 使用更可靠的流处理方式
+      String buffer = '';
+      await for (final chunk in response.stream.transform(utf8.decoder)) {
+        buffer += chunk;
+        while (buffer.contains('\n')) {
+          final index = buffer.indexOf('\n');
+          final line = buffer.substring(0, index).trim();
+          buffer = buffer.substring(index + 1);
+
+          if (line.startsWith('data: ')) {
+            final data = line.substring(6);
+            if (data == '[DONE]') break;
+            
+            try {
+              final json = jsonDecode(data);
+              if (json['choices'] != null && 
+                  json['choices'].isNotEmpty && 
+                  json['choices'][0]['delta'] != null &&
+                  json['choices'][0]['delta']['content'] != null) {
+                final content = json['choices'][0]['delta']['content'] as String;
+                if (content.isNotEmpty) {
+                  yield content;
+                }
+              }
+            } catch (e) {
+              print('解析数据失败: $e');
+              print('原始数据: $data');
+              continue;
             }
-          } catch (e) {
-            print('Error parsing chunk: $data');
-            print('Error: $e');
-            continue;
           }
         }
       }
     } catch (e) {
-      print('API error: $e');
+      print('API调用失败: $e');
       rethrow;
     }
   }
@@ -389,21 +427,28 @@ class AIService extends GetxService {
     }
 
     try {
-      final uri = Uri.parse('${config.apiUrl}${config.apiPath}');
-      final request = http.Request('POST', uri);
-      
-      request.headers.addAll({
+      // 添加 CORS 和流式传输相关的 headers
+      final headers = {
         'Content-Type': 'application/json',
         'x-goog-api-key': config.apiKey.startsWith('Bearer ') ? config.apiKey.substring(7) : config.apiKey,
-      });
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      };
 
+      if (_isWeb) {
+        headers['Access-Control-Allow-Origin'] = '*';
+        headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
+        headers['Access-Control-Allow-Headers'] = 'Content-Type, x-goog-api-key';
+      }
+
+      final request = http.Request('POST', Uri.parse('${config.apiUrl}${config.apiPath}'));
+      request.headers.addAll(headers);
       request.body = jsonEncode({
         'contents': [
           {
             'role': 'user',
-            'parts': [
-              {'text': '$systemPrompt\n\n$userPrompt'}
-            ]
+            'parts': [{'text': '$systemPrompt\n\n$userPrompt'}]
           }
         ],
         'generationConfig': {
@@ -414,34 +459,33 @@ class AIService extends GetxService {
         },
       });
 
-      final response = await _client.send(request).timeout(
-        const Duration(minutes: 5),
-        onTimeout: () {
-          throw TimeoutException('API 请求超时，请重试');
-        },
-      );
-
+      final response = await _client.send(request);
+      
       if (response.statusCode != 200) {
-        final body = await response.stream.bytesToString();
-        throw Exception('生成失败：$body');
+        final error = await response.stream.bytesToString();
+        throw Exception('API请求失败: $error');
       }
 
-      // Web 平台特殊处理
-      final reader = StreamReader(response.stream);
-      while (true) {
-        final data = await reader.readLine();
-        if (data == null || data.isEmpty) continue;
-        
-        try {
-          if (data.startsWith('data: ')) {
-            final jsonStr = data.substring(6);
-            if (jsonStr == '[DONE]') break;
+      // 使用更可靠的流处理方式
+      String buffer = '';
+      await for (final chunk in response.stream.transform(utf8.decoder)) {
+        buffer += chunk;
+        while (buffer.contains('\n')) {
+          final index = buffer.indexOf('\n');
+          final line = buffer.substring(0, index).trim();
+          buffer = buffer.substring(index + 1);
 
-            final json = jsonDecode(jsonStr);
-            if (json['candidates'] != null && json['candidates'].isNotEmpty) {
-              final content = json['candidates'][0]['content'];
-              if (content != null && content['parts'] != null) {
-                final parts = content['parts'] as List;
+          if (line.startsWith('data: ')) {
+            final data = line.substring(6);
+            if (data == '[DONE]') break;
+            
+            try {
+              final json = jsonDecode(data);
+              if (json['candidates'] != null && 
+                  json['candidates'].isNotEmpty && 
+                  json['candidates'][0]['content'] != null &&
+                  json['candidates'][0]['content']['parts'] != null) {
+                final parts = json['candidates'][0]['content']['parts'] as List;
                 if (parts.isNotEmpty) {
                   final text = parts[0]['text'] as String;
                   if (text.isNotEmpty) {
@@ -449,16 +493,16 @@ class AIService extends GetxService {
                   }
                 }
               }
+            } catch (e) {
+              print('解析数据失败: $e');
+              print('原始数据: $data');
+              continue;
             }
           }
-        } catch (e) {
-          print('Error parsing chunk: $data');
-          print('Error: $e');
-          continue;
         }
       }
     } catch (e) {
-      print('API error: $e');
+      print('API调用失败: $e');
       rethrow;
     }
   }
