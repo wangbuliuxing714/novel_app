@@ -64,49 +64,68 @@ class NovelGeneratorService extends GetxService {
     void Function(String)? onProgress,
   }) async {
     try {
-      _updateProgress("正在生成大纲...");
+      _updateProgress("正在准备生成大纲...");
       
       // 每次生成的章节数
-      const int batchSize = 20;
+      const int batchSize = 10;  // 减小批次大小，提高成功率
       final StringBuffer fullOutline = StringBuffer();
       
       // 分批生成大纲
       for (int start = 1; start <= totalChapters; start += batchSize) {
         final int end = (start + batchSize - 1) > totalChapters ? totalChapters : (start + batchSize - 1);
-        _updateProgress("正在生成第 $start 至 $end 章的大纲...");
+        _updateProgress("正在生成第 $start 至 $end 章的大纲...\n如果生成时间较长，请耐心等待。");
         
-        // 获取已生成的大纲内容作为上下文
-        String existingOutline = fullOutline.toString();
-        
-        final batchOutline = await _generateOutlineContent(
-          title,
-          [genre],
-          theme,
-          totalChapters,
-          start,
-          end,
-          existingOutline,
-        );
-        
-        fullOutline.write(batchOutline);
-        
-        // 如果不是最后一批，等待一下再继续
-        if (end < totalChapters) {
-          await Future.delayed(const Duration(seconds: 2));
+        try {
+          // 获取已生成的大纲内容作为上下文
+          String existingOutline = fullOutline.toString();
+          
+          final batchOutline = await _generateOutlineContent(
+            title,
+            [genre],
+            theme,
+            totalChapters,
+            start,
+            end,
+            existingOutline,
+          );
+          
+          if (batchOutline.isEmpty) {
+            throw Exception("生成的大纲内容为空，请重试");
+          }
+          
+          fullOutline.write(batchOutline);
+          _updateProgress("已完成 ${(end * 100 / totalChapters).toStringAsFixed(1)}% 的大纲生成");
+          
+          // 如果不是最后一批，等待一下再继续
+          if (end < totalChapters) {
+            await Future.delayed(const Duration(seconds: 3));
+          }
+        } catch (e) {
+          _updateProgress("第 $start 至 $end 章的大纲生成失败：${e.toString()}\n正在重试...");
+          // 当前批次失败，回退一个批次重试
+          start -= batchSize;
+          await Future.delayed(const Duration(seconds: 5));
+          continue;
         }
       }
       
+      final outlineContent = fullOutline.toString();
+      if (outlineContent.isEmpty) {
+        throw Exception("生成的大纲内容为空，请重试");
+      }
+      
       // 显示全屏预览对话框
+      _updateProgress("大纲生成完成，请检查并确认");
       final confirmedOutline = await Get.to(() => OutlinePreviewScreen(
-        outline: fullOutline.toString(),
+        outline: outlineContent,
         onOutlineConfirmed: (String modifiedOutline) {
           Get.back(result: modifiedOutline);
         },
       ));
       
-      return confirmedOutline ?? fullOutline.toString();
+      return confirmedOutline ?? outlineContent;
     } catch (e) {
-      _updateProgress("大纲生成失败");
+      _updateProgress("大纲生成失败：${e.toString()}\n请检查网络连接和API配置后重试");
       rethrow;
     }
   }

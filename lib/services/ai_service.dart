@@ -37,6 +37,7 @@ class AIService extends GetxService {
         final currentModel = _apiConfig.getCurrentModel();
         switch (currentModel.apiFormat) {
           case 'OpenAI API兼容':
+            yield '正在连接 AI 服务...\n';
             yield* _streamOpenAIAPI(
               systemPrompt: systemPrompt,
               userPrompt: userPrompt,
@@ -47,6 +48,7 @@ class AIService extends GetxService {
             print('耗时：${DateTime.now().difference(startTime).inSeconds}秒');
             return;
           case 'Google API':
+            yield '正在连接 Google AI 服务...\n';
             yield* _streamGoogleAPI(
               systemPrompt: systemPrompt,
               userPrompt: userPrompt,
@@ -61,8 +63,14 @@ class AIService extends GetxService {
         }
       } catch (e) {
         print('发生错误：$e');
+        if (e is TimeoutException) {
+          yield '请求超时，正在重试...\n';
+        } else {
+          yield '发生错误，正在重试：${e.toString()}\n';
+        }
+        
         if (attempts >= _maxRetries) {
-          print('达到最大重试次数，请求失败。');
+          yield '达到最大重试次数，请求失败。\n具体错误：${e.toString()}\n请检查：\n1. 网络连接是否正常\n2. API 配置是否正确\n3. API 余额是否充足';
           rethrow;
         }
         await Future.delayed(_retryInterval);
@@ -87,7 +95,12 @@ class AIService extends GetxService {
           ..headers.addAll(headers)
           ..body = body;
 
-        final response = await _client.send(request).timeout(_timeout);
+        final response = await _client.send(request).timeout(
+          _timeout,
+          onTimeout: () {
+            throw TimeoutException('API 请求超时，请检查网络连接');
+          },
+        );
         
         if (response.statusCode == 200) {
           print('API请求成功！');
@@ -95,10 +108,11 @@ class AIService extends GetxService {
           return response;
         } else if (response.statusCode >= 500 && attempts < _maxRetries) {
           print('服务器错误，状态码：${response.statusCode}');
-          await Future.delayed(_retryInterval * attempts);  // 指数退避
+          await Future.delayed(_retryInterval * attempts);
           continue;
         } else {
-          throw Exception('API 请求失败：${response.statusCode}');
+          final responseBody = await response.stream.bytesToString();
+          throw Exception('API 请求失败：状态码 ${response.statusCode}\n响应：$responseBody');
         }
       } catch (e) {
         print('第$attempts次请求失败：$e');
@@ -106,7 +120,7 @@ class AIService extends GetxService {
           print('达到最大重试次数，请求失败。');
           rethrow;
         }
-        await Future.delayed(_retryInterval * attempts);  // 指数退避
+        await Future.delayed(_retryInterval * attempts);
         continue;
       }
     }
