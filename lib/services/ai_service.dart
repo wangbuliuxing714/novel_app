@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:novel_app/controllers/api_config_controller.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 enum AIModel {
   deepseek,
@@ -17,6 +18,7 @@ class AIService extends GetxService {
   final _timeout = const Duration(seconds: 30);
   final _maxRetries = 10;  // 最大重试次数
   final _retryInterval = const Duration(seconds: 1);  // 重试间隔
+  final bool _isWeb = kIsWeb;  // 添加 Web 平台判断
 
   AIService(this._apiConfig);
 
@@ -38,23 +40,41 @@ class AIService extends GetxService {
         switch (currentModel.apiFormat) {
           case 'OpenAI API兼容':
             yield '正在连接 AI 服务...\n';
-            yield* _streamOpenAIAPI(
-              systemPrompt: systemPrompt,
-              userPrompt: userPrompt,
-              maxTokens: maxTokens,
-              temperature: temperature,
-            );
+            if (_isWeb) {
+              yield* _streamOpenAIAPIWeb(
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                maxTokens: maxTokens,
+                temperature: temperature,
+              );
+            } else {
+              yield* _streamOpenAIAPI(
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                maxTokens: maxTokens,
+                temperature: temperature,
+              );
+            }
             print('请求成功！');
             print('耗时：${DateTime.now().difference(startTime).inSeconds}秒');
             return;
           case 'Google API':
             yield '正在连接 Google AI 服务...\n';
-            yield* _streamGoogleAPI(
-              systemPrompt: systemPrompt,
-              userPrompt: userPrompt,
-              maxTokens: maxTokens,
-              temperature: temperature,
-            );
+            if (_isWeb) {
+              yield* _streamGoogleAPIWeb(
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                maxTokens: maxTokens,
+                temperature: temperature,
+              );
+            } else {
+              yield* _streamGoogleAPI(
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                maxTokens: maxTokens,
+                temperature: temperature,
+              );
+            }
             print('请求成功！');
             print('耗时：${DateTime.now().difference(startTime).inSeconds}秒');
             return;
@@ -287,6 +307,162 @@ class AIService extends GetxService {
     }
   }
 
+  // 为 Web 平台添加特殊的 OpenAI API 流处理
+  Stream<String> _streamOpenAIAPIWeb({
+    required String systemPrompt,
+    required String userPrompt,
+    required int maxTokens,
+    required double temperature,
+  }) async* {
+    final config = _apiConfig.getCurrentModel();
+    if (config.apiKey.isEmpty) {
+      throw Exception('请先配置 API Key');
+    }
+
+    try {
+      final response = await _postWithRetry(
+        uri: Uri.parse('${config.apiUrl}${config.apiPath}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': config.apiKey.startsWith('Bearer ') ? config.apiKey : 'Bearer ${config.apiKey}',
+        },
+        body: jsonEncode({
+          'model': config.model,
+          'messages': [
+            {
+              'role': 'system',
+              'content': systemPrompt,
+            },
+            {
+              'role': 'user',
+              'content': userPrompt,
+            },
+          ],
+          'parameters': {
+            'temperature': temperature,
+            'max_tokens': maxTokens,
+            'top_p': config.topP,
+          },
+          'stream': true,
+          'user_id': config.appId,
+        }),
+      );
+
+      // Web 平台特殊处理
+      final reader = StreamReader(response.stream);
+      while (true) {
+        final data = await reader.readLine();
+        if (data == null || data.isEmpty) continue;
+        if (data == 'data: [DONE]') break;
+        
+        if (data.startsWith('data: ')) {
+          try {
+            final jsonStr = data.substring(6);
+            final json = jsonDecode(jsonStr);
+            final content = json['choices'][0]['delta']['content'] as String?;
+            if (content != null && content.isNotEmpty) {
+              yield content;
+            }
+          } catch (e) {
+            print('Error parsing chunk: $data');
+            print('Error: $e');
+            continue;
+          }
+        }
+      }
+    } catch (e) {
+      print('API error: $e');
+      rethrow;
+    }
+  }
+
+  // 为 Web 平台添加特殊的 Google API 流处理
+  Stream<String> _streamGoogleAPIWeb({
+    required String systemPrompt,
+    required String userPrompt,
+    required int maxTokens,
+    required double temperature,
+  }) async* {
+    final config = _apiConfig.getCurrentModel();
+    if (config.apiKey.isEmpty) {
+      throw Exception('请先配置 API Key');
+    }
+
+    try {
+      final uri = Uri.parse('${config.apiUrl}${config.apiPath}');
+      final request = http.Request('POST', uri);
+      
+      request.headers.addAll({
+        'Content-Type': 'application/json',
+        'x-goog-api-key': config.apiKey.startsWith('Bearer ') ? config.apiKey.substring(7) : config.apiKey,
+      });
+
+      request.body = jsonEncode({
+        'contents': [
+          {
+            'role': 'user',
+            'parts': [
+              {'text': '$systemPrompt\n\n$userPrompt'}
+            ]
+          }
+        ],
+        'generationConfig': {
+          'temperature': temperature,
+          'maxOutputTokens': maxTokens,
+          'topP': config.topP,
+          'topK': 40,
+        },
+      });
+
+      final response = await _client.send(request).timeout(
+        const Duration(minutes: 5),
+        onTimeout: () {
+          throw TimeoutException('API 请求超时，请重试');
+        },
+      );
+
+      if (response.statusCode != 200) {
+        final body = await response.stream.bytesToString();
+        throw Exception('生成失败：$body');
+      }
+
+      // Web 平台特殊处理
+      final reader = StreamReader(response.stream);
+      while (true) {
+        final data = await reader.readLine();
+        if (data == null || data.isEmpty) continue;
+        
+        try {
+          if (data.startsWith('data: ')) {
+            final jsonStr = data.substring(6);
+            if (jsonStr == '[DONE]') break;
+
+            final json = jsonDecode(jsonStr);
+            if (json['candidates'] != null && json['candidates'].isNotEmpty) {
+              final content = json['candidates'][0]['content'];
+              if (content != null && content['parts'] != null) {
+                final parts = content['parts'] as List;
+                if (parts.isNotEmpty) {
+                  final text = parts[0]['text'] as String;
+                  if (text.isNotEmpty) {
+                    yield text;
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          print('Error parsing chunk: $data');
+          print('Error: $e');
+          continue;
+        }
+      }
+    } catch (e) {
+      print('API error: $e');
+      rethrow;
+    }
+  }
+
   void dispose() {
     _client.close();
   }
@@ -341,5 +517,38 @@ class AIService extends GetxService {
     } catch (e) {
       return '生成失败: $e';
     }
+  }
+}
+
+// 添加一个 StreamReader 类来帮助处理 Web 平台的流
+class StreamReader {
+  final Stream<List<int>> stream;
+  List<int> _buffer = [];
+  final _utf8Decoder = utf8.decoder;
+
+  StreamReader(this.stream);
+
+  Future<String?> readLine() async {
+    final completer = Completer<String?>();
+    
+    await for (final chunk in stream) {
+      _buffer.addAll(chunk);
+      
+      final lineEnd = _buffer.indexOf('\n'.codeUnitAt(0));
+      if (lineEnd >= 0) {
+        final line = _utf8Decoder.convert(_buffer.sublist(0, lineEnd));
+        _buffer = _buffer.sublist(lineEnd + 1);
+        completer.complete(line);
+        return completer.future;
+      }
+    }
+    
+    if (_buffer.isNotEmpty) {
+      final line = _utf8Decoder.convert(_buffer);
+      _buffer = [];
+      return line;
+    }
+    
+    return null;
   }
 } 
