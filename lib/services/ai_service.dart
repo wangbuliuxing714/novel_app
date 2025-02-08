@@ -334,77 +334,64 @@ class AIService extends GetxService {
     }
 
     try {
-      // 添加 CORS 和流式传输相关的 headers
-      final headers = {
-        'Content-Type': 'application/json',
-        'Authorization': config.apiKey.startsWith('Bearer ') ? config.apiKey : 'Bearer ${config.apiKey}',
-        'Accept': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      };
+      print('准备发送请求到: ${config.apiUrl}${config.apiPath}');
+      
+      final response = await http.post(
+        Uri.parse('${config.apiUrl}${config.apiPath}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': config.apiKey.startsWith('Bearer ') ? config.apiKey : 'Bearer ${config.apiKey}',
+          'Accept': 'text/event-stream',
+        },
+        body: jsonEncode({
+          'model': config.model,
+          'messages': [
+            {
+              'role': 'system',
+              'content': systemPrompt,
+            },
+            {
+              'role': 'user',
+              'content': userPrompt,
+            },
+          ],
+          'stream': true,
+          'temperature': temperature,
+          'max_tokens': maxTokens,
+          'top_p': config.topP,
+        }),
+      );
 
-      if (_isWeb) {
-        headers['Access-Control-Allow-Origin'] = '*';
-        headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
-        headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
-      }
-
-      final request = http.Request('POST', Uri.parse('${config.apiUrl}${config.apiPath}'));
-      request.headers.addAll(headers);
-      request.body = jsonEncode({
-        'model': config.model,
-        'messages': [
-          {
-            'role': 'system',
-            'content': systemPrompt,
-          },
-          {
-            'role': 'user',
-            'content': userPrompt,
-          },
-        ],
-        'stream': true,
-        'temperature': temperature,
-        'max_tokens': maxTokens,
-        'top_p': config.topP,
-      });
-
-      final response = await _client.send(request);
+      print('收到响应，状态码: ${response.statusCode}');
       
       if (response.statusCode != 200) {
-        final error = await response.stream.bytesToString();
-        throw Exception('API请求失败: $error');
+        throw Exception('API请求失败: ${response.body}');
       }
 
-      // 使用更可靠的流处理方式
-      String buffer = '';
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        buffer += chunk;
-        while (buffer.contains('\n')) {
-          final index = buffer.indexOf('\n');
-          final line = buffer.substring(0, index).trim();
-          buffer = buffer.substring(index + 1);
-
-          if (line.startsWith('data: ')) {
-            final data = line.substring(6);
-            if (data == '[DONE]') break;
-            
-            try {
-              final json = jsonDecode(data);
-              if (json['choices'] != null && 
-                  json['choices'].isNotEmpty && 
-                  json['choices'][0]['delta'] != null &&
-                  json['choices'][0]['delta']['content'] != null) {
-                final content = json['choices'][0]['delta']['content'] as String;
-                if (content.isNotEmpty) {
-                  yield content;
-                }
+      final lines = response.body.split('\n');
+      for (var line in lines) {
+        line = line.trim();
+        if (line.isEmpty) continue;
+        if (line.startsWith('data: ')) {
+          final data = line.substring(6);
+          if (data == '[DONE]') break;
+          
+          try {
+            final json = jsonDecode(data);
+            if (json['choices'] != null && 
+                json['choices'].isNotEmpty && 
+                json['choices'][0]['delta'] != null &&
+                json['choices'][0]['delta']['content'] != null) {
+              final content = json['choices'][0]['delta']['content'] as String;
+              if (content.isNotEmpty) {
+                print('生成内容: $content');
+                yield content;
               }
-            } catch (e) {
-              print('解析数据失败: $e');
-              print('原始数据: $data');
-              continue;
             }
+          } catch (e) {
+            print('解析数据失败: $e');
+            print('原始数据: $data');
+            continue;
           }
         }
       }
@@ -427,83 +414,82 @@ class AIService extends GetxService {
     }
 
     try {
-      // 添加 CORS 和流式传输相关的 headers
-      final headers = {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': config.apiKey.startsWith('Bearer ') ? config.apiKey.substring(7) : config.apiKey,
-        'Accept': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      };
-
-      if (_isWeb) {
-        headers['Access-Control-Allow-Origin'] = '*';
-        headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
-        headers['Access-Control-Allow-Headers'] = 'Content-Type, x-goog-api-key';
-      }
-
-      final request = http.Request('POST', Uri.parse('${config.apiUrl}${config.apiPath}'));
-      request.headers.addAll(headers);
-      request.body = jsonEncode({
-        'contents': [
-          {
-            'role': 'user',
-            'parts': [{'text': '$systemPrompt\n\n$userPrompt'}]
-          }
-        ],
-        'generationConfig': {
-          'temperature': temperature,
-          'maxOutputTokens': maxTokens,
-          'topP': config.topP,
-          'topK': 40,
+      print('准备发送请求到: ${config.apiUrl}${config.apiPath}');
+      
+      final response = await http.post(
+        Uri.parse('${config.apiUrl}${config.apiPath}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': config.apiKey.startsWith('Bearer ') ? config.apiKey.substring(7) : config.apiKey,
+          'Accept': 'text/event-stream',
         },
-      });
+        body: jsonEncode({
+          'contents': [
+            {
+              'role': 'user',
+              'parts': [{'text': '$systemPrompt\n\n$userPrompt'}]
+            }
+          ],
+          'generationConfig': {
+            'temperature': temperature,
+            'maxOutputTokens': maxTokens,
+            'topP': config.topP,
+            'topK': 40,
+          },
+        }),
+      );
 
-      final response = await _client.send(request);
+      print('收到响应，状态码: ${response.statusCode}');
       
       if (response.statusCode != 200) {
-        final error = await response.stream.bytesToString();
-        throw Exception('API请求失败: $error');
+        throw Exception('API请求失败: ${response.body}');
       }
 
-      // 使用更可靠的流处理方式
-      String buffer = '';
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        buffer += chunk;
-        while (buffer.contains('\n')) {
-          final index = buffer.indexOf('\n');
-          final line = buffer.substring(0, index).trim();
-          buffer = buffer.substring(index + 1);
-
-          if (line.startsWith('data: ')) {
-            final data = line.substring(6);
-            if (data == '[DONE]') break;
-            
-            try {
-              final json = jsonDecode(data);
-              if (json['candidates'] != null && 
-                  json['candidates'].isNotEmpty && 
-                  json['candidates'][0]['content'] != null &&
-                  json['candidates'][0]['content']['parts'] != null) {
-                final parts = json['candidates'][0]['content']['parts'] as List;
-                if (parts.isNotEmpty) {
-                  final text = parts[0]['text'] as String;
-                  if (text.isNotEmpty) {
-                    yield text;
-                  }
+      final lines = response.body.split('\n');
+      for (var line in lines) {
+        line = line.trim();
+        if (line.isEmpty) continue;
+        if (line.startsWith('data: ')) {
+          final data = line.substring(6);
+          if (data == '[DONE]') break;
+          
+          try {
+            final json = jsonDecode(data);
+            if (json['candidates'] != null && 
+                json['candidates'].isNotEmpty && 
+                json['candidates'][0]['content'] != null &&
+                json['candidates'][0]['content']['parts'] != null) {
+              final parts = json['candidates'][0]['content']['parts'] as List;
+              if (parts.isNotEmpty) {
+                final text = parts[0]['text'] as String;
+                if (text.isNotEmpty) {
+                  print('生成内容: $text');
+                  yield text;
                 }
               }
-            } catch (e) {
-              print('解析数据失败: $e');
-              print('原始数据: $data');
-              continue;
             }
+          } catch (e) {
+            print('解析数据失败: $e');
+            print('原始数据: $data');
+            continue;
           }
         }
       }
     } catch (e) {
       print('API调用失败: $e');
       rethrow;
+    }
+  }
+
+  // 添加一个新的方法来检查 API 连接
+  Future<bool> checkApiConnection() async {
+    try {
+      final config = _apiConfig.getCurrentModel();
+      final response = await http.get(Uri.parse(config.apiUrl));
+      return response.statusCode == 200;
+    } catch (e) {
+      print('API连接检查失败: $e');
+      return false;
     }
   }
 
