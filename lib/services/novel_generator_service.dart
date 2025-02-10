@@ -1,24 +1,26 @@
 import 'package:get/get.dart';
 import 'package:novel_app/services/ai_service.dart';
-import 'package:novel_app/prompts/system_prompts.dart';
+import 'package:novel_app/prompts/master_prompts.dart';
+import 'package:novel_app/prompts/outline_generation.dart';
+import 'package:novel_app/prompts/chapter_generation.dart';
 import 'package:novel_app/prompts/genre_prompts.dart';
-import 'package:novel_app/prompts/plot_prompts.dart';
+import 'package:novel_app/prompts/character_prompts.dart';
 import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/controllers/api_config_controller.dart';
-import 'package:novel_app/services/content_review_service.dart';
 import 'package:novel_app/screens/outline_preview_screen.dart';
 import 'package:novel_app/services/cache_service.dart';
 import 'package:novel_app/controllers/novel_controller.dart';
-import 'package:novel_app/controllers/outline_prompt_controller.dart';
 
 class NovelGeneratorService extends GetxService {
   final AIService _aiService;
   final ApiConfigController _apiConfig;
   final CacheService _cacheService;
-  final _outlineController = Get.find<OutlinePromptController>();
   final void Function(String)? onProgress;
   final String targetReaders = "青年读者";
   final RxList<String> _generatedParagraphs = <String>[].obs;
+  final RxInt _currentGeneratingChapter = 0.obs;
+  final RxBool _isGenerating = false.obs;
+  final RxString _lastError = ''.obs;
 
   NovelGeneratorService(
     this._aiService, 
@@ -26,6 +28,11 @@ class NovelGeneratorService extends GetxService {
     this._cacheService,
     {this.onProgress}
   );
+
+  // 获取当前生成状态的getter
+  int get currentGeneratingChapter => _currentGeneratingChapter.value;
+  bool get isGenerating => _isGenerating.value;
+  String get lastError => _lastError.value;
 
   void _updateProgress(String message) {
     onProgress?.call(message);
@@ -62,222 +69,51 @@ class NovelGeneratorService extends GetxService {
     required String targetReaders,
     required int totalChapters,
     void Function(String)? onProgress,
+    void Function(String)? onContent,
   }) async {
     try {
-      _updateProgress("正在准备生成大纲...");
+      _updateProgress("正在生成大纲...");
       
       // 每次生成的章节数
-      const int batchSize = 10;  // 减小批次大小，提高成功率
+      const int batchSize = 10;
       final StringBuffer fullOutline = StringBuffer();
       
       // 分批生成大纲
       for (int start = 1; start <= totalChapters; start += batchSize) {
-        final int end = (start + batchSize - 1) > totalChapters ? totalChapters : (start + batchSize - 1);
-        _updateProgress("正在生成第 $start 至 $end 章的大纲...\n如果生成时间较长，请耐心等待。");
+        final end = (start + batchSize - 1).clamp(1, totalChapters);
         
-        try {
-          // 获取已生成的大纲内容作为上下文
-          String existingOutline = fullOutline.toString();
-          
-          final batchOutline = await _generateOutlineContent(
-            title,
-            [genre],
-            theme,
-            totalChapters,
-            start,
-            end,
-            existingOutline,
-          );
-          
-          if (batchOutline.isEmpty) {
-            throw Exception("生成的大纲内容为空，请重试");
+        final systemPrompt = OutlineGeneration.getSystemPrompt(title, genre, theme);
+        
+        final outlinePrompt = OutlineGeneration.getOutlinePrompt(title, genre, theme, totalChapters);
+
+        // 生成大纲
+        String outlineContent = '';
+        await for (final chunk in _aiService.generateTextStream(
+          systemPrompt: systemPrompt,
+          userPrompt: outlinePrompt,
+        )) {
+          outlineContent += chunk;
+          if (onContent != null) {
+            onContent(chunk);
           }
-          
-          fullOutline.write(batchOutline);
-          _updateProgress("已完成 ${(end * 100 / totalChapters).toStringAsFixed(1)}% 的大纲生成");
-          
-          // 如果不是最后一批，等待一下再继续
-          if (end < totalChapters) {
-            await Future.delayed(const Duration(seconds: 3));
-          }
-        } catch (e) {
-          _updateProgress("第 $start 至 $end 章的大纲生成失败：${e.toString()}\n正在重试...");
-          // 当前批次失败，回退一个批次重试
-          start -= batchSize;
-          await Future.delayed(const Duration(seconds: 5));
-          continue;
+        }
+
+        // 格式化大纲
+        outlineContent = OutlineGeneration.formatOutline(outlineContent);
+
+        fullOutline.write(outlineContent);
+        fullOutline.write('\n\n');
+
+        if (onProgress != null) {
+          onProgress('已生成 ${end}/${totalChapters} 章大纲');
         }
       }
-      
-      final outlineContent = fullOutline.toString();
-      if (outlineContent.isEmpty) {
-        throw Exception("生成的大纲内容为空，请重试");
-      }
-      
-      // 显示全屏预览对话框
-      _updateProgress("大纲生成完成，请检查并确认");
-      final confirmedOutline = await Get.to(() => OutlinePreviewScreen(
-        outline: outlineContent,
-        onOutlineConfirmed: (String modifiedOutline) {
-          Get.back(result: modifiedOutline);
-        },
-      ));
-      
-      return confirmedOutline ?? outlineContent;
+
+      return fullOutline.toString();
     } catch (e) {
-      _updateProgress("大纲生成失败：${e.toString()}\n请检查网络连接和API配置后重试");
+      print('生成大纲失败: $e');
       rethrow;
     }
-  }
-
-  Future<String> _generateOutlineContent(
-    String title,
-    List<String> genres,
-    String theme,
-    int totalChapters,
-    int startChapter,
-    int endChapter,
-    String existingOutline,
-  ) async {
-    // 使用选中的提示词模板
-    String template = _outlineController.currentTemplate;
-    
-    // 替换变量
-    template = template
-      .replaceAll('{title}', title)
-      .replaceAll('{genre}', genres[0])
-      .replaceAll('{theme}', theme)
-      .replaceAll('{target_readers}', targetReaders)
-      .replaceAll('{total_chapters}', totalChapters.toString());
-
-    final genrePrompt = GenrePrompts.getPromptByGenre(genres[0]);
-    final systemPrompt = '''【重要提示】
-在开始生成内容之前：
-1. 请仔细阅读并完全理解以下所有要求
-2. 确保理解每一条规则的具体含义
-3. 在生成内容时始终遵循这些规则
-4. 如果对某条规则有疑问，请按最严格的标准执行
-
-【核心原则】
-你是一位专业的小说大纲策划师。请遵循以下原则：
-
-1. 严格遵循已有大纲的风格和设定：
-   - 必须与已生成的大纲保持一致性
-   - 延续已有的情节发展方向
-   - 保持人物性格和设定的统一
-   - 注意前后章节的关联性
-   - 合理设置伏笔和呼应
-
-2. 章节规划（最高优先级）：
-   - 每个章节都要有明确的主题
-   - 情节要循序渐进
-   - 设置适当的悬念
-   - 注意前后呼应
-   - 保持节奏的变化
-
-3. 情节设计：
-   - 每个章节都要有独特的看点
-   - 避免情节重复
-   - 保持合理的起伏
-   - 设置适当的冲突
-   - 注意细节的连贯性
-
-4. 整体结构：
-   - 注意与总体框架的呼应
-   - 为后续发展预留空间
-   - 保持故事节奏的变化
-   - 设置恰当的转折点
-   - 为高潮做好铺垫
-
-类型参考：
-${genrePrompt}
-
-用户创作要求：
-${theme}
-
-请记住：你不能更改用户指定的任何角色名称和基本设定。''';
-
-    final userPrompt = '''请为这部小说继续创作第$startChapter章到第$endChapter章的详细大纲。
-
-已有的大纲内容：
-${existingOutline.isEmpty ? '这是第一部分大纲' : existingOutline}
-
-创作要求：
-1. 必须与已有大纲保持连贯性和一致性
-2. 每章都要有明确的主题和情节推进
-3. 注意与前文的呼应和伏笔
-4. 为后续章节预留发展空间
-5. 符合${genres[0]}类型的特点
-
-格式要求：
-第N章：章节标题
-- 情节概要：
-- 重点场景：
-- 关键人物：
-- 重要伏笔：
-
-请确保：
-1. 完整输出第$startChapter章到第$endChapter章的大纲
-2. 每章都有详细内容
-3. 章节之间逻辑连贯
-4. 符合用户要求和${genres[0]}类型特点''';
-
-    final buffer = StringBuffer();
-    onProgress?.call('正在生成大纲...');
-    
-    await for (final chunk in _aiService.generateTextStream(
-      systemPrompt: systemPrompt,
-      userPrompt: userPrompt,
-      maxTokens: 8000,
-      temperature: 0.7,
-    )) {
-      buffer.write(chunk);
-      onProgress?.call('正在生成大纲...\n\n${buffer.toString()}');
-    }
-
-    // 解析和格式化大纲
-    final formattedOutline = _formatOutline(buffer.toString(), startChapter, endChapter);
-    return formattedOutline;
-  }
-
-  String _formatOutline(String rawOutline, int startChapter, int endChapter) {
-    final buffer = StringBuffer();
-    final chapters = rawOutline.split(RegExp(r'第\d+章'));
-    
-    // 格式化每章大纲
-    for (int i = 1; i <= chapters.length; i++) {
-      if (i >= chapters.length) break;
-      final chapter = chapters[i].trim();
-      buffer.writeln('第${startChapter + i - 1}章：${_extractChapterTitle(chapter)}');
-      buffer.writeln(_formatChapterOutline(chapter));
-      buffer.writeln();
-    }
-    
-    return buffer.toString();
-  }
-
-  String _extractChapterTitle(String chapterContent) {
-    final titleMatch = RegExp(r'[:：](.*?)\n').firstMatch(chapterContent);
-    return titleMatch?.group(1)?.trim() ?? '未命名章节';
-  }
-
-  String _formatChapterOutline(String chapterContent) {
-    final lines = chapterContent.split('\n');
-    final buffer = StringBuffer();
-    
-    String currentSection = '';
-    for (final line in lines) {
-      if (line.contains('情节概要：')) currentSection = '情节概要';
-      else if (line.contains('重点场景：')) currentSection = '重点场景';
-      else if (line.contains('关键人物：')) currentSection = '关键人物';
-      else if (line.contains('重要伏笔：')) currentSection = '重要伏笔';
-      
-      if (line.trim().isNotEmpty) {
-        buffer.writeln(line.trim());
-      }
-    }
-    
-    return buffer.toString();
   }
 
   Future<Chapter> generateChapter({
@@ -289,196 +125,69 @@ ${existingOutline.isEmpty ? '这是第一部分大纲' : existingOutline}
     required String genre,
     required String theme,
     void Function(String)? onProgress,
+    void Function(String)? onContent,
   }) async {
-    // 生成章节缓存键
-    final chapterKey = '${title}_$number';
-    
-    // 检查缓存
-    final cachedContent = await _checkCache(chapterKey);
-    if (cachedContent != null) {
-      onProgress?.call('从缓存加载第$number章...');
+    try {
+      if (onProgress != null) {
+        onProgress('正在生成第 $number 章...');
+      }
+
+      // 将之前的章节转换为字符串列表
+      final previousChapterContents = previousChapters
+          .map((chapter) => chapter.content)
+          .toList();
+
+      final chapterContent = await _generateChapterContent(
+        title: title,
+        chapterNumber: number,
+        outline: outline,
+        previousChapters: previousChapterContents,
+        totalChapters: totalChapters,
+        genre: genre,
+        theme: theme,
+        style: '轻松幽默',
+        onProgress: onProgress,
+        onContent: onContent,
+      );
+
+      final chapterKey = 'chapter_${title}_$number';
+      
+      // 检查缓存
+      final cachedContent = await _checkCache(chapterKey);
+      if (cachedContent != null) {
+        return Chapter(
+          number: number,
+          title: title,
+          content: cachedContent,
+        );
+      }
+
+      // 缓存成功生成的内容
+      await _cacheContent(chapterKey, chapterContent);
+
+      // 创建新的章节对象
       return Chapter(
         number: number,
         title: title,
-        content: cachedContent,
+        content: chapterContent,
       );
+    } catch (e) {
+      print('生成章节失败: $e');
+      rethrow;
     }
-
-    final context = _buildChapterContext(
-      outline: outline,
-      previousChapters: previousChapters,
-      currentNumber: number,
-      totalChapters: totalChapters,
-    );
-
-    // 获取成功的写作模式
-    final successfulPatterns = _cacheService.getSuccessfulPatterns();
-    
-    // 根据章节进度动态调整生成参数
-    final temperature = _getTemperatureForChapter(number, totalChapters);
-    final maxTokens = _getMaxTokensForChapter(number);
-    
-    final genrePrompt = GenrePrompts.getPromptByGenre(genre);
-    
-    final systemPrompt = '''【重要提示】
-在开始生成内容之前：
-1. 请仔细阅读并完全理解以下所有要求
-2. 确保理解每一条规则的具体含义
-3. 在生成内容时始终遵循这些规则
-4. 如果对某条规则有疑问，请按最严格的标准执行
-
-【核心原则】
-你是一位极具创造力的小说家。请遵循以下原则：
-
-1. 严格遵循大纲（最高优先级）：
-   - 必须完全按照大纲设定的情节发展来写作
-   - 每个情节点都要与大纲保持一致
-   - 禁止偏离大纲设定的主要情节走向
-   - 确保所有关键剧情都按大纲展开
-   - 细节可以发挥但不能违背大纲精神
-
-2. 上下文连贯性（第二优先级）：
-   - 必须仔细阅读前文内容，保持情节连贯
-   - 人物性格、行为必须与前文一致
-   - 所有新情节必须建立在已有内容基础上
-   - 禁止出现与前文矛盾的描写
-   - 新增内容必须考虑前文铺垫
-
-3. 严格禁止重复：
-   - 绝对禁止连续或相近段落出现相似内容
-   - 每个段落必须包含全新信息
-   - 禁止使用相似句式和词组
-   - 实时检查并删除任何重复描写
-   - 确保每个场景都有独特元素
-
-4. 情节要求：
-   - 故事情节必须围绕用户提供的具体要求展开
-   - 每个章节都要有明确的情节推进
-   - 前后章节要有合理的逻辑连接
-   - 为每个章节设计独特的看点
-
-5. 大纲格式：
-   - 为每一章设计具体的标题
-   - 详细描述每章的主要内容
-   - 标注每章的重点情节和关键场景
-   - 注明章节间的关联和伏笔
-
-6. 整体结构：
-   - 合理安排情节起伏
-   - 设置适当的悬念和转折
-   - 故事节奏要富有变化
-   - 确保整体情节的完整性
-
-类型参考：
-${genrePrompt}
-
-用户创作要求：
-${theme}
-
-请记住：你不能更改用户指定的任何角色名称和基本设定。''';
-
-    final userPrompt = '''请根据以下信息创作第$number章的内容：
-
-【重要提示】
-- 必须严格遵循大纲中关于本章的所有设定
-- 必须确保与前文的连贯性和一致性
-- 禁止偏离大纲规划的情节发展方向
-- 细节描写需要建立在已有内容基础上
-
-【字数要求】
-- 本章字数控制在3000-5000字之间
-- 内容要充实完整
-- 避免无意义的重复
-- 段落结构要完整
-
-【上下文信息】
-$context
-
-【创作指导】
-${_designChapterFocus(number: number, totalChapters: totalChapters, outline: outline)}
-
-特别要求：
-1. 本章独特性（在严格遵循大纲的前提下）：
-   - 采用${_getChapterStyle(number, totalChapters)}的写作风格
-   - 重点描写${_getChapterFocus(number, totalChapters)}
-   - 通过${_getChapterTechnique(number, totalChapters)}来推进剧情
-
-2. 叙事创新：
-   - 采用${_getNarrationStyle(number, totalChapters)}的叙事方式
-   - 运用${_getDescriptionStyle(number, totalChapters)}的描写手法
-   - 设置${_getPlotDevice(number, totalChapters)}类型的情节
-
-3. 节奏控制：
-   - 以${_getChapterRhythm(number, totalChapters)}的节奏展开
-   - 在关键处${_getEmotionalStyle(number, totalChapters)}
-   - 结尾要${_getEndingStyle(number, totalChapters)}
-
-请确保本章在风格和内容上与其他章节有明显区别，给读者带来新鲜的阅读体验。''';
-
-    final buffer = StringBuffer();
-    onProgress?.call('正在生成第$number章...');
-    
-    await for (final chunk in _aiService.generateTextStream(
-      systemPrompt: systemPrompt,
-      userPrompt: userPrompt,
-      maxTokens: maxTokens,
-      temperature: temperature,
-    )) {
-      buffer.write(chunk);
-      onProgress?.call('正在生成第$number章...\n\n${buffer.toString()}');
-    }
-
-    // 检查生成的内容是否有重复
-    final paragraphs = buffer.toString().split('\n\n');
-    final uniqueParagraphs = <String>[];
-    
-    for (final paragraph in paragraphs) {
-      if (paragraph.trim().isEmpty) continue;
-      if (!_isParagraphDuplicate(paragraph)) {
-        uniqueParagraphs.add(paragraph);
-        _addGeneratedParagraph(paragraph);
-      }
-    }
-
-    final content = uniqueParagraphs.join('\n\n');
-
-    // 添加内容校对步骤
-    onProgress?.call('正在校对和润色第$number章...');
-    final contentReviewService = Get.find<ContentReviewService>();
-    
-    final reviewedContent = await contentReviewService.reviewContent(
-      content: content,
-      style: _determineStyle(number, totalChapters),
-      model: AIModel.values.firstWhere(
-        (m) => m.toString().split('.').last == _apiConfig.selectedModelId.value,
-        orElse: () => AIModel.deepseek,
-      ),
-    );
-
-    // 缓存成功生成的内容
-    await _cacheContent(chapterKey, reviewedContent);
-
-    onProgress?.call('第$number章校对完成');
-
-    return Chapter(
-      number: number,
-      title: title,
-      content: reviewedContent,
-    );
   }
 
   double _getTemperatureForChapter(int number, int totalChapters) {
     final progress = number / totalChapters;
-    // 在不同阶段使用不同的温度值，增加内容的多样性
-    if (progress < 0.2) return 0.75; // 开始阶段，相对保守
-    if (progress < 0.4) return 0.85; // 发展阶段，增加创造性
-    if (progress < 0.7) return 0.9;  // 高潮阶段，最大创造性
-    return 0.8; // 结尾阶段，适度平衡
+    if (progress < 0.2) return 0.8;  // 提高开始阶段的创造性
+    if (progress < 0.4) return 0.85;
+    if (progress < 0.7) return 0.9;
+    return 0.85;  // 提高结尾阶段的创造性
   }
 
   int _getMaxTokensForChapter(int number) {
-    // 根据章节重要性动态调整长度，但不超过5000字的token限制
-    return 6000; // 约等于5000字
+    // 增加 token 限制到 8000，约等于 6000-7000 字
+    return 8000;
   }
 
   String _getChapterStyle(int number, int totalChapters) {
@@ -637,77 +346,6 @@ ${_designChapterFocus(number: number, totalChapters: totalChapters, outline: out
     }
   }
 
-  String _buildChapterContext({
-    required String outline,
-    required List<Chapter> previousChapters,
-    required int currentNumber,
-    required int totalChapters,
-  }) {
-    final buffer = StringBuffer();
-    
-    // 添加大纲信息
-    buffer.writeln('【总体大纲】');
-    buffer.writeln(outline);
-    buffer.writeln();
-
-    // 添加前文概要
-    if (previousChapters.isNotEmpty) {
-      buffer.writeln('【前文概要】');
-      for (int i = 0; i < previousChapters.length; i++) {
-        final chapter = previousChapters[i];
-        buffer.writeln('第${chapter.number}章 ${chapter.title}');
-        buffer.writeln('概要：${_generateChapterSummary(chapter.content)}');
-        buffer.writeln();
-      }
-    }
-
-    // 添加最近两章的完整内容
-    if (previousChapters.isNotEmpty) {
-      buffer.writeln('【最近两章详细内容】');
-      final recentChapters = previousChapters.length >= 2 
-          ? previousChapters.sublist(previousChapters.length - 2)
-          : previousChapters;
-      
-      for (final chapter in recentChapters) {
-        buffer.writeln('第${chapter.number}章 ${chapter.title}');
-        buffer.writeln(chapter.content);
-        buffer.writeln();
-      }
-    }
-
-    // 添加当前章节定位
-    buffer.writeln('【当前章节定位】');
-    final progress = currentNumber / totalChapters;
-    if (currentNumber == 1) {
-      buffer.writeln('开篇章节，需要：');
-      buffer.writeln('- 介绍主要人物和背景');
-      buffer.writeln('- 设置初始矛盾');
-      buffer.writeln('- 埋下后续伏笔');
-    } else if (progress < 0.3) {
-      buffer.writeln('起始阶段，需要：');
-      buffer.writeln('- 展开初期剧情');
-      buffer.writeln('- 深化人物塑造');
-      buffer.writeln('- 推进主要情节');
-    } else if (progress < 0.7) {
-      buffer.writeln('发展阶段，需要：');
-      buffer.writeln('- 加强矛盾冲突');
-      buffer.writeln('- 展示角色成长');
-      buffer.writeln('- 推进核心剧情');
-    } else if (progress < 0.9) {
-      buffer.writeln('高潮阶段，需要：');
-      buffer.writeln('- 制造情节高潮');
-      buffer.writeln('- 解决主要矛盾');
-      buffer.writeln('- 收束重要线索');
-    } else {
-      buffer.writeln('结局阶段，需要：');
-      buffer.writeln('- 完美收官');
-      buffer.writeln('- 点题升华');
-      buffer.writeln('- 首尾呼应');
-    }
-
-    return buffer.toString();
-  }
-
   String _generateChapterSummary(String content) {
     // 简单的摘要生成逻辑，可以根据需要优化
     final sentences = content.split('。');
@@ -734,7 +372,7 @@ ${_designChapterFocus(number: number, totalChapters: totalChapters, outline: out
       buffer.writeln('- 设置悬念，但不要过于明显');
     } else {
       buffer.writeln('- 避免线性叙事，可以穿插回忆或预示');
-      buffer.writeln('- 通过多线并行推进剧情');
+      buffer.writeln('- 通过多线并进推进剧情');
       buffer.writeln('- 在关键处设置情节反转或悬念');
     }
 
@@ -814,59 +452,103 @@ ${_designChapterFocus(number: number, totalChapters: totalChapters, outline: out
     required int totalChapters,
     bool continueGeneration = false,
     void Function(String)? onProgress,
+    void Function(String)? onContent,
   }) async {
     try {
-      String outline;
-      List<Chapter> chapters = [];
-      String fullContent = '';
+      onProgress?.call('正在生成大纲...');
+      
+      // 第一步：生成整体架构
+      onProgress?.call('正在设计故事整体架构...');
+      final systemPrompt = OutlineGeneration.getSystemPrompt(title, genre, theme);
+      final outlinePrompt = OutlineGeneration.getOutlinePrompt(title, genre, theme, totalChapters);
 
-      if (continueGeneration) {
-        // 从缓存中获取大纲和已生成的章节
-        outline = await _checkCache('outline_$title') ?? '';
-        if (outline.isEmpty) {
-          throw Exception('未找到缓存的大纲，无法继续生成');
+      String structureContent = '';
+      await for (final chunk in _aiService.generateTextStream(
+        systemPrompt: systemPrompt,
+        userPrompt: outlinePrompt,
+        maxTokens: 2000,
+        temperature: 0.7,
+      )) {
+        structureContent += chunk;
+        if (onContent != null) {
+          onContent(chunk);
         }
-
-        // 获取已缓存的章节
-        for (int i = 1; i <= totalChapters; i++) {
-          final cachedChapter = await _checkCache('chapter_${title}_$i');
-          if (cachedChapter != null) {
-            final chapter = Chapter(
-              number: i,
-              title: '第 $i 章',
-              content: cachedChapter,
-            );
-            chapters.add(chapter);
-            fullContent += cachedChapter + '\n\n';
-          } else {
-            // 从第一个未缓存的章节开始生成
-            break;
-          }
-        }
-      } else {
-        // 清除之前的缓存
-        _cacheService.clearAllCache();
-        
-        // 生成新大纲
-        onProgress?.call('正在生成大纲...');
-        outline = await generateOutline(
-          title: title,
-          genre: genre,
-          theme: theme,
-          targetReaders: targetReaders,
-          totalChapters: totalChapters,
-          onProgress: onProgress,
-        );
-        
-        // 缓存大纲
-        await _cacheService.cacheContent('outline_$title', outline);
       }
 
-      // 继续生成剩余章节
-      for (int i = chapters.length + 1; i <= totalChapters; i++) {
+      // 格式化架构内容
+      structureContent = OutlineGeneration.formatOutline(structureContent);
+
+      // 第二步：基于架构生成详细大纲
+      onProgress?.call('正在细化故事情节...');
+      
+      // 分批生成大纲
+      const int batchSize = 10;
+      final StringBuffer fullOutline = StringBuffer();
+      fullOutline.write(structureContent); // 先写入整体架构
+      fullOutline.write('\n\n三、具体章节\n');
+      
+      for (int start = 1; start <= totalChapters; start += batchSize) {
+        final end = (start + batchSize - 1).clamp(1, totalChapters);
+        
+        final detailPrompt = '''基于上述整体架构，请为第$start章到第$end章创作详细内容：
+1. 每章必须包含：
+   - 主要情节（2-3个关键点）
+   - 次要情节（1-2个补充点）
+   - 人物发展（重要人物的变化）
+   - 伏笔/悬念（如果有）
+
+2. 确保：
+   - 每章情节符合整体架构设计
+   - 前后章节的连贯性
+   - 人物发展的合理性
+   - 悬念和伏笔的布局
+
+当前已有内容：
+$structureContent''';
+
+        String outlineContent = '';
+        await for (final chunk in _aiService.generateTextStream(
+          systemPrompt: systemPrompt,
+          userPrompt: detailPrompt,
+          maxTokens: 2000,
+          temperature: 0.7,
+        )) {
+          outlineContent += chunk;
+          if (onContent != null) {
+            onContent(chunk);
+          }
+        }
+
+        // 格式化大纲
+        outlineContent = OutlineGeneration.formatOutline(outlineContent);
+
+        fullOutline.write(outlineContent);
+        fullOutline.write('\n\n');
+
+        if (onProgress != null) {
+          onProgress('已完成 ${end}/${totalChapters} 章节大纲');
+        }
+      }
+
+      final outline = fullOutline.toString().trim();
+      
+      // 创建初始小说对象
+      final novel = Novel(
+        title: title,
+        genre: genre,
+        outline: outline,
+        content: '',
+        chapters: [],
+        createdAt: DateTime.now(),
+      );
+
+      // 开始生成章节
+      final List<Chapter> chapters = [];
+      for (int i = 1; i <= totalChapters; i++) {
         onProgress?.call('正在生成第 $i 章...');
+        
         final chapter = await generateChapter(
-          title: '第 $i 章',
+          title: title,
           number: i,
           outline: outline,
           previousChapters: chapters,
@@ -874,28 +556,264 @@ ${_designChapterFocus(number: number, totalChapters: totalChapters, outline: out
           genre: genre,
           theme: theme,
           onProgress: onProgress,
+          onContent: onContent,
         );
         
-        // 缓存新生成的章节
-        await _cacheService.cacheContent('chapter_${title}_$i', chapter.content);
-        
         chapters.add(chapter);
-        fullContent += chapter.content + '\n\n';
-
-        // 通知章节生成完成
-        Get.find<NovelController>().addChapter(chapter);
       }
 
+      // 更新小说对象，包含所有章节
       return Novel(
         title: title,
         genre: genre,
         outline: outline,
-        content: fullContent,
+        content: chapters.map((c) => c.content).join('\n\n'),
         chapters: chapters,
         createdAt: DateTime.now(),
       );
     } catch (e) {
       print('生成小说失败: $e');
+      rethrow;
+    }
+  }
+
+  // 解析大纲,提取每章节的具体要求
+  Map<int, Map<String, dynamic>> _parseOutline(String outline) {
+    final Map<int, Map<String, dynamic>> chapterPlans = {};
+    int currentChapter = 0;
+    Map<String, dynamic>? currentPlan;
+    
+    final lines = outline.split('\n');
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      
+      // 检测章节标题
+      if (line.contains('第') && line.contains('章')) {
+        // 保存前一章节的计划
+        if (currentChapter > 0 && currentPlan != null) {
+          chapterPlans[currentChapter] = currentPlan;
+        }
+        
+        // 开始新的章节
+        currentChapter = int.tryParse(
+          line.replaceAll('第', '').replaceAll('章', '').trim()
+        ) ?? 0;
+        
+        currentPlan = {
+          'title': line.trim(),
+          'mainPlots': <String>[],
+          'subPlots': <String>[],
+          'characterDev': <String>[],
+          'foreshadowing': <String>[],
+        };
+      } 
+      // 解析章节内容
+      else if (currentPlan != null) {
+        final trimmedLine = line.trim();
+        if (trimmedLine.startsWith('主要情节：') || trimmedLine.startsWith('- 主要情节：')) {
+          currentPlan['mainPlots'].add(trimmedLine.replaceAll('主要情节：', '').replaceAll('- ', '').trim());
+        } else if (trimmedLine.startsWith('次要情节：') || trimmedLine.startsWith('- 次要情节：')) {
+          currentPlan['subPlots'].add(trimmedLine.replaceAll('次要情节：', '').replaceAll('- ', '').trim());
+        } else if (trimmedLine.startsWith('人物发展：') || trimmedLine.startsWith('- 人物发展：')) {
+          currentPlan['characterDev'].add(trimmedLine.replaceAll('人物发展：', '').replaceAll('- ', '').trim());
+        } else if (trimmedLine.startsWith('伏笔：') || trimmedLine.startsWith('- 伏笔：')) {
+          currentPlan['foreshadowing'].add(trimmedLine.replaceAll('伏笔：', '').replaceAll('- ', '').trim());
+        }
+      }
+    }
+    
+    // 添加最后一章
+    if (currentChapter > 0 && currentPlan != null) {
+      chapterPlans[currentChapter] = currentPlan;
+    }
+
+    return chapterPlans;
+  }
+
+  // 构建章节生成上下文
+  String _buildChapterContext({
+    required String outline,
+    required List<Chapter> previousChapters,
+    required int currentNumber,
+    required int totalChapters,
+    required Map<int, Map<String, dynamic>> chapterPlans,
+  }) {
+    final buffer = StringBuffer();
+    
+    // 添加当前章节的具体规划
+    final currentPlan = chapterPlans[currentNumber];
+    if (currentPlan != null) {
+      buffer.writeln('【本章规划】');
+      buffer.writeln('标题：${currentPlan['title']}');
+      
+      buffer.writeln('\n主要情节：');
+      for (var plot in currentPlan['mainPlots']) {
+        buffer.writeln('- $plot');
+      }
+      
+      buffer.writeln('\n次要情节：');
+      for (var plot in currentPlan['subPlots']) {
+        buffer.writeln('- $plot');
+      }
+      
+      buffer.writeln('\n人物发展：');
+      for (var dev in currentPlan['characterDev']) {
+        buffer.writeln('- $dev');
+      }
+      
+      buffer.writeln('\n伏笔与悬念：');
+      for (var hint in currentPlan['foreshadowing']) {
+        buffer.writeln('- $hint');
+      }
+    }
+
+    // 添加前文概要
+    if (previousChapters.isNotEmpty) {
+      buffer.writeln('\n【前文概要】');
+      // 只获取最近的3章作为直接上下文
+      final recentChapters = previousChapters.length > 3 
+          ? previousChapters.sublist(previousChapters.length - 3)
+          : previousChapters;
+          
+      for (var chapter in recentChapters) {
+        buffer.writeln('第${chapter.number}章 概要：');
+        buffer.writeln(_generateChapterSummary(chapter.content));
+        buffer.writeln();
+      }
+    }
+
+    // 添加后续章节规划概要
+    if (currentNumber < totalChapters) {
+      buffer.writeln('\n【后续章节规划】');
+      for (var i = currentNumber + 1; i <= currentNumber + 2 && i <= totalChapters; i++) {
+        final nextPlan = chapterPlans[i];
+        if (nextPlan != null) {
+          buffer.writeln('第$i章规划：');
+          buffer.writeln('标题：${nextPlan['title']}');
+          if (nextPlan['mainPlots'].isNotEmpty) {
+            buffer.writeln('主要情节：${nextPlan['mainPlots'][0]}');
+          }
+          buffer.writeln();
+        }
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  // 清理生成的内容，移除大纲标记
+  String _cleanGeneratedContent(String content) {
+    // 需要过滤的标记列表
+    final markersToRemove = [
+      '主要情节：',
+      '次要情节：',
+      '人物发展：',
+      '伏笔：',
+      '伏笔与悬念：',
+      '【本章规划】',
+      '【前文概要】',
+      '【后续章节规划】',
+      '标题：',
+    ];
+    
+    // 分行处理
+    final lines = content.split('\n');
+    final cleanedLines = lines.where((line) {
+      final trimmedLine = line.trim();
+      // 过滤掉空行
+      if (trimmedLine.isEmpty) return false;
+      
+      // 过滤掉以标记开头的行
+      for (final marker in markersToRemove) {
+        if (trimmedLine.startsWith(marker) || 
+            trimmedLine.startsWith('- $marker') ||
+            trimmedLine == '-') {
+          return false;
+        }
+      }
+      
+      // 过滤掉纯数字编号的行
+      if (RegExp(r'^\d+\.$').hasMatch(trimmedLine)) {
+        return false;
+      }
+      
+      return true;
+    }).toList();
+
+    // 合并处理后的内容
+    return cleanedLines.join('\n');
+  }
+
+  // 生成章节内容的方法
+  Future<String> _generateChapterContent({
+    required String title,
+    required int chapterNumber,
+    required String outline,
+    required List<String> previousChapters,
+    required int totalChapters,
+    required String genre,
+    required String theme,
+    required String style,
+    void Function(String)? onProgress,
+    void Function(String)? onContent,
+  }) async {
+    try {
+      // 解析大纲获取具体章节规划
+      final chapterPlans = await _parseOutline(outline);
+      
+      // 构建章节上下文
+      final chapterContext = _buildChapterContext(
+        outline: outline,
+        previousChapters: previousChapters.map((content) => 
+          Chapter(number: previousChapters.indexOf(content) + 1, 
+                 title: '第${previousChapters.indexOf(content) + 1}章',
+                 content: content)).toList(),
+        currentNumber: chapterNumber,
+        totalChapters: totalChapters,
+        chapterPlans: chapterPlans,
+      );
+
+      final systemPrompt = ChapterGeneration.getSystemPrompt(style);
+      
+      final chapterPrompt = '''
+${ChapterGeneration.getChapterPrompt(
+        title: title,
+        chapterNumber: chapterNumber,
+        outline: outline,
+        previousChapters: previousChapters,
+        totalChapters: totalChapters,
+        genre: genre,
+        theme: theme,
+        style: style,
+      )}
+
+详细的章节规划和上下文信息：
+$chapterContext
+
+请严格按照章节规划来创作本章内容，确保与前文保持连贯性，并为后续章节做好铺垫。
+注意：直接写正文内容，不要包含任何大纲标记或标题。''';
+
+      final buffer = StringBuffer();
+      
+      await for (final chunk in _aiService.generateTextStream(
+        systemPrompt: systemPrompt,
+        userPrompt: chapterPrompt,
+        maxTokens: _getMaxTokensForChapter(chapterNumber),
+        temperature: _getTemperatureForChapter(chapterNumber, totalChapters),
+      )) {
+        final cleanedChunk = ChapterGeneration.formatChapter(chunk);
+        buffer.write(cleanedChunk);
+        if (onContent != null) {
+          onContent(cleanedChunk);
+        }
+      }
+
+      // 清理生成的内容
+      final content = _cleanGeneratedContent(buffer.toString());
+      
+      return content;
+    } catch (e) {
+      print('生成章节失败: $e');
       rethrow;
     }
   }
@@ -950,5 +868,44 @@ ${_designChapterFocus(number: number, totalChapters: totalChapters, outline: out
     } catch (e) {
       return '生成失败: $e';
     }
+  }
+
+  // 保存生成进度
+  Future<void> _saveGenerationProgress(String title, int chapter) async {
+    await _cacheService.cacheContent('${title}_generation_progress', chapter.toString());
+  }
+  
+  // 获取上次生成进度
+  Future<int> _getLastGenerationProgress(String title) async {
+    final progress = await _cacheService.getContent('${title}_generation_progress');
+    return progress != null ? int.tryParse(progress) ?? 0 : 0;
+  }
+
+  // 添加一个方法来检查是否可以继续生成
+  Future<bool> canContinueGeneration(String title) async {
+    final progress = await _getLastGenerationProgress(title);
+    final outline = await _checkCache('outline_$title');
+    return progress > 0 && outline != null;
+  }
+
+  // 添加一个方法来获取生成进度信息
+  Future<Map<String, dynamic>> getGenerationProgress(String title) async {
+    final progress = await _getLastGenerationProgress(title);
+    final outline = await _checkCache('outline_$title');
+    return {
+      'currentChapter': progress,
+      'hasOutline': outline != null,
+      'lastError': _lastError.value,
+      'isGenerating': _isGenerating.value,
+    };
+  }
+
+  // 添加一个方法来清除生成进度
+  Future<void> clearGenerationProgress(String title) async {
+    await _cacheService.removeContent('${title}_generation_progress');
+    await _cacheService.removeContent('outline_$title');
+    _currentGeneratingChapter.value = 0;
+    _isGenerating.value = false;
+    _lastError.value = '';
   }
 } 

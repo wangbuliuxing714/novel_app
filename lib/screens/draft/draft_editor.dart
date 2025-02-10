@@ -253,9 +253,7 @@ class _DraftEditorState extends State<DraftEditor> with SingleTickerProviderStat
     final isTablet = MediaQuery.of(context).size.width >= 600;
     
     return Theme(
-      data: Theme.of(context).copyWith(
-        scaffoldBackgroundColor: _themeController.getAdjustedBackgroundColor(),
-      ),
+      data: Theme.of(context),
       child: Scaffold(
         appBar: isTablet ? null : AppBar(
           elevation: 0,
@@ -283,9 +281,10 @@ class _DraftEditorState extends State<DraftEditor> with SingleTickerProviderStat
             ),
           ],
         ),
-        body: FadeTransition(
-          opacity: _fadeAnimation,
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (isTablet) ...[
                 Container(

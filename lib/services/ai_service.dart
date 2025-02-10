@@ -25,7 +25,7 @@ class AIService extends GetxService {
   Stream<String> generateTextStream({
     required String systemPrompt,
     required String userPrompt,
-    int maxTokens = 4000,
+    int maxTokens = 8000,  // 增加默认token限制
     double temperature = 0.8,
   }) async* {
     int attempts = 0;
@@ -493,11 +493,7 @@ class AIService extends GetxService {
     }
   }
 
-  void dispose() {
-    _client.close();
-  }
-
-  Future<String> generateText(String prompt) async {
+  Future<String> generateChapterContent(String prompt) async {
     try {
       String response = '';
       await for (final chunk in generateTextStream(
@@ -540,13 +536,20 @@ class AIService extends GetxService {
 
 请基于以上要求，创作出逻辑严密、情节生动、人物丰满的精彩内容。''',
         userPrompt: prompt,
+        maxTokens: 8000,
+        temperature: 0.8,
       )) {
         response += chunk;
       }
       return response;
     } catch (e) {
-      return '生成失败: $e';
+      print('生成章节内容失败: $e');
+      rethrow;
     }
+  }
+
+  void dispose() {
+    _client.close();
   }
 }
 

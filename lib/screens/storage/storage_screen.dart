@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:novel_app/controllers/novel_controller.dart';
 import 'package:novel_app/controllers/theme_controller.dart';
 import 'package:novel_app/services/export_service.dart';
+import 'package:novel_app/models/novel.dart';
 
 class StorageScreen extends StatelessWidget {
   final NovelController _novelController = Get.find();
@@ -21,64 +22,42 @@ class StorageScreen extends StatelessWidget {
             icon: const Icon(Icons.file_download),
             onPressed: () => _showExportDialog(context),
           ),
-          // 清空按钮
-          IconButton(
-            icon: const Icon(Icons.delete_forever),
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('确认清空'),
-                  content: const Text('确定要清空所有已生成的章节吗？'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('取消'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        _novelController.clearAllChapters();
-                        Navigator.of(context).pop();
-                        Get.snackbar('成功', '已清空所有章节');
-                      },
-                      child: const Text('确定'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
         ],
       ),
-      body: Container(
-        color: _themeController.getAdjustedBackgroundColor(),
-        child: Obx(() {
-          final chapters = _novelController.generatedChapters;
-          if (chapters.isEmpty) {
-            return const Center(
-              child: Text('暂无已生成的章节'),
-            );
-          }
-          return ListView.builder(
-            itemCount: chapters.length,
-            itemBuilder: (context, index) {
-              final chapter = chapters[index];
-              return ListTile(
-                title: Text('第${chapter.number}章：${chapter.title}'),
-                subtitle: Text(
-                  chapter.content,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                onTap: () => Get.toNamed('/chapter_detail', arguments: chapter),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: () => _novelController.deleteChapter(chapter.number),
-                ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Obx(() {
+              final chapters = _novelController.generatedChapters;
+              if (chapters.isEmpty) {
+                return const Center(
+                  child: Text('暂无已生成的章节'),
+                );
+              }
+              return ListView.builder(
+                itemCount: chapters.length,
+                itemBuilder: (context, index) {
+                  final chapter = chapters[index];
+                  return ListTile(
+                    title: Text('第${chapter.number}章：${chapter.title}'),
+                    subtitle: Text(
+                      chapter.content,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => Get.toNamed('/chapter_detail', arguments: chapter),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete),
+                      onPressed: () => _novelController.deleteChapter(chapter.number),
+                    ),
+                  );
+                },
               );
-            },
-          );
-        }),
+            }),
+          ],
+        ),
       ),
     );
   }
@@ -124,10 +103,19 @@ class StorageScreen extends StatelessWidget {
                 return;
               }
               
-              final result = await _exportService.exportChapters(
-                chapters,
-                selectedFormat,
+              final novel = Novel(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
                 title: _novelController.title.value,
+                genre: _novelController.selectedGenres.join(','),
+                outline: _novelController.currentOutline.value?.chapters.map((c) => c.contentOutline).join('\n\n') ?? '',
+                content: chapters.map((c) => c.content).join('\n\n'),
+                chapters: chapters,
+                createdAt: DateTime.now(),
+              );
+              final result = await _exportService.exportNovel(
+                novel,
+                selectedFormat,
+                selectedChapters: chapters,
               );
               
               Get.snackbar(

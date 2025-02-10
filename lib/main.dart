@@ -9,29 +9,47 @@ import 'package:novel_app/screens/storage/storage_screen.dart';
 import 'package:novel_app/screens/chapter_detail/chapter_detail_screen.dart';
 import 'package:novel_app/screens/chapter_edit/chapter_edit_screen.dart';
 import 'package:novel_app/screens/draft/draft_screen.dart';
+import 'package:novel_app/screens/character_type/character_type_screen.dart';
+import 'package:novel_app/screens/library/library_screen.dart';
+import 'package:novel_app/screens/tts/tts_screen.dart';
 import 'package:novel_app/services/ai_service.dart';
 import 'package:novel_app/services/novel_generator_service.dart';
-import 'package:novel_app/models/prompt_template.dart';
 import 'package:novel_app/services/content_review_service.dart';
 import 'package:novel_app/services/announcement_service.dart';
 import 'package:novel_app/screens/announcement_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:novel_app/services/cache_service.dart';
-import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/controllers/theme_controller.dart';
 import 'package:novel_app/controllers/draft_controller.dart';
 import 'package:novel_app/services/license_service.dart';
 import 'package:novel_app/screens/license_screen.dart';
 import 'package:novel_app/controllers/genre_controller.dart';
-import 'package:novel_app/screens/genre_manager_screen.dart';
 import 'package:novel_app/controllers/style_controller.dart';
-import 'package:novel_app/controllers/outline_prompt_controller.dart';
+import 'package:novel_app/services/character_card_service.dart';
+import 'package:novel_app/services/character_type_service.dart';
+import 'package:novel_app/adapters/novel_adapter.dart';
+import 'package:novel_app/adapters/chapter_adapter.dart';
+import 'package:novel_app/controllers/tts_controller.dart';
+import 'package:novel_app/screens/tools/tools_screen.dart';
+import 'package:novel_app/screens/novel_continue/novel_continue_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // 初始化 Hive
   await Hive.initFlutter();
+  
+  // 注册 Novel 和 Chapter 适配器
+  if (!Hive.isAdapterRegistered(0)) {
+    Hive.registerAdapter(NovelAdapter());
+  }
+  if (!Hive.isAdapterRegistered(1)) {
+    Hive.registerAdapter(ChapterAdapter());
+  }
+
+  // 打开 Hive 盒子
+  await Hive.openBox('novels');
+  await Hive.openBox('generated_chapters');
 
   // 初始化SharedPreferences（确保最先初始化）
   final prefs = await SharedPreferences.getInstance();
@@ -45,10 +63,12 @@ void main() async {
   final aiService = Get.put(AIService(apiConfig));
   final cacheService = Get.put(CacheService(prefs));
   
-  // 先初始化OutlinePromptController
-  final outlinePromptController = OutlinePromptController();
-  await outlinePromptController.init();
-  Get.put(outlinePromptController);
+  // 初始化角色相关服务
+  Get.put(CharacterTypeService(prefs));
+  Get.put(CharacterCardService(prefs));
+  
+  // 初始化文本转语音控制器
+  Get.put(TTSController());
   
   // 然后初始化其他依赖服务
   Get.put(NovelGeneratorService(aiService, apiConfig, cacheService));
@@ -77,9 +97,8 @@ void main() async {
 
   // 只在Web平台初始化许可证服务
   if (kIsWeb) {
-    final licenseService = LicenseService();
+    final licenseService = Get.put(LicenseService());
     await licenseService.init();
-    Get.put(licenseService);
   }
 
   runApp(const MyApp());
@@ -106,11 +125,19 @@ class MyApp extends StatelessWidget {
           : const HomeScreen(),  // 非Web平台直接显示主页
       initialRoute: '/',
       getPages: [
-        GetPage(name: '/', page: () => const HomeScreen()),
+        GetPage(name: '/', page: () => HomeScreen()),
         GetPage(name: '/storage', page: () => StorageScreen()),
         GetPage(name: '/chapter_detail', page: () => ChapterDetailScreen()),
         GetPage(name: '/chapter_edit', page: () => ChapterEditScreen()),
         GetPage(name: '/draft', page: () => DraftScreen()),
+        GetPage(name: '/library', page: () => LibraryScreen()),
+        GetPage(name: '/character_type', page: () => CharacterTypeScreen()),
+        GetPage(name: '/tools', page: () => ToolsScreen()),
+        GetPage(name: '/tts', page: () => TTSScreen()),
+        GetPage(
+          name: '/novel_continue',
+          page: () => NovelContinueScreen(novel: Get.arguments),
+        ),
       ],
     );
   }

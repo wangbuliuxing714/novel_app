@@ -1,10 +1,28 @@
+import 'package:hive/hive.dart';
+
+part 'novel.g.dart';
+
+@HiveType(typeId: 0)
 class Novel {
+  @HiveField(0)
   final String id;
+  
+  @HiveField(1)
   final String title;
+  
+  @HiveField(2)
   final String genre;
-  final String outline;
+  
+  @HiveField(3)
+  String outline;
+  
+  @HiveField(4)
   String content;
+  
+  @HiveField(5)
   final List<Chapter> chapters;
+  
+  @HiveField(6)
   final DateTime createdAt;
 
   String get createTime => createdAt.toString().split('.')[0];
@@ -42,11 +60,38 @@ class Novel {
         .toList(),
     createdAt: DateTime.parse(json['createdAt'] as String),
   );
+
+  Chapter get outlineChapter {
+    return chapters.firstWhere(
+      (chapter) => chapter.number == 0,
+      orElse: () => Chapter(
+        number: 0,
+        title: '大纲',
+        content: outline,
+      ),
+    );
+  }
+
+  void addOutlineAsChapter() {
+    if (!chapters.any((chapter) => chapter.number == 0)) {
+      chapters.insert(0, Chapter(
+        number: 0,
+        title: '大纲',
+        content: outline,
+      ));
+    }
+  }
 }
 
+@HiveType(typeId: 1)
 class Chapter {
+  @HiveField(0)
   final int number;
+  
+  @HiveField(1)
   final String title;
+  
+  @HiveField(2)
   final String content;
 
   int get index => number - 1;

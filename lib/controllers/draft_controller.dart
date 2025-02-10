@@ -74,7 +74,7 @@ class DraftController extends GetxController {
 
   Future<String> aiModifyText(String text, String prompt) async {
     try {
-      final response = await _aiService.generateText(
+      final response = await _aiService.generateChapterContent(
         '请根据以下要求修改文本：\n'
         '要求：$prompt\n'
         '原文：$text'

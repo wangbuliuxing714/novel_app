@@ -82,4 +82,13 @@ class CacheService extends GetxService {
       await _prefs.remove(key);
     }
   }
+
+  // 添加删除内容的方法
+  Future<void> removeContent(String key) async {
+    try {
+      await _prefs.remove(key);
+    } catch (e) {
+      print('删除缓存失败: $e');
+    }
+  }
 } 

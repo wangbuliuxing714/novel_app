@@ -1,116 +1,204 @@
-import 'export_service_web.dart' if (dart.library.io) 'export_service_mobile.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:novel_app/models/novel.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:path/path.dart' as path;
 
 class ExportService {
   static const Map<String, String> supportedFormats = {
-    'txt': '纯文本文件 (.txt)',
-    'md': 'Markdown文件 (.md)',
-    'html': '网页文件 (.html)',
-    'epub': '电子书文件 (.epub)',
+    'txt': '文本文件 (*.txt)',
+    'pdf': 'PDF文档 (*.pdf)',
+    'html': '网页文件 (*.html)',
   };
 
-  final ExportPlatform _platform = createExportPlatform();
-
-  Future<String> exportChapters(List<Chapter> chapters, String format, {String? title}) async {
+  Future<String> exportNovel(Novel novel, String format, {List<Chapter>? selectedChapters}) async {
     try {
-      String content = '';
-      
-      switch (format) {
-        case 'txt':
-          content = _generateTxtContent(chapters, title);
-          break;
-        case 'md':
-          content = _generateMarkdownContent(chapters, title);
-          break;
-        case 'html':
-          content = _generateHtmlContent(chapters, title);
-          break;
-        case 'epub':
-          return await _platform.exportEpub(chapters, title);
-        default:
-          throw Exception('不支持的文件格式：$format');
+      final chapters = selectedChapters ?? novel.chapters;
+      if (chapters.isEmpty) {
+        return '没有可导出的章节';
       }
 
-      return await _platform.exportContent(content, format, title);
+      final directory = await _getExportDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = '${novel.title}_$timestamp';
+
+      switch (format) {
+        case 'txt':
+          return await _exportToTxt(directory, fileName, novel, chapters);
+        case 'pdf':
+          return await _exportToPdf(directory, fileName, novel, chapters);
+        case 'html':
+          return await _exportToHtml(directory, fileName, novel, chapters);
+        default:
+          return '不支持的导出格式';
+      }
     } catch (e) {
       return '导出失败：$e';
     }
   }
 
-  String _generateTxtContent(List<Chapter> chapters, String? title) {
-    final buffer = StringBuffer();
-    
-    if (title != null) {
-      buffer.writeln(title);
-      buffer.writeln('=' * 30);
-      buffer.writeln();
+  Future<Directory> _getExportDirectory() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final exportDir = Directory(path.join(appDir.path, 'exports'));
+    if (!await exportDir.exists()) {
+      await exportDir.create(recursive: true);
     }
+    return exportDir;
+  }
 
+  Future<String> _exportToTxt(
+    Directory directory,
+    String fileName,
+    Novel novel,
+    List<Chapter> chapters,
+  ) async {
+    final file = File(path.join(directory.path, '$fileName.txt'));
+    final buffer = StringBuffer();
+
+    // 写入小说标题
+    buffer.writeln('《${novel.title}》');
+    buffer.writeln('\n');
+
+    // 写入章节内容
     for (final chapter in chapters) {
       buffer.writeln('第${chapter.number}章：${chapter.title}');
-      buffer.writeln();
+      buffer.writeln('\n');
       buffer.writeln(chapter.content);
-      buffer.writeln();
-      buffer.writeln('=' * 30);
-      buffer.writeln();
+      buffer.writeln('\n\n');
     }
 
-    return buffer.toString();
+    await file.writeAsString(buffer.toString());
+    return '已导出到：${file.path}';
   }
 
-  String _generateMarkdownContent(List<Chapter> chapters, String? title) {
-    final buffer = StringBuffer();
-    
-    if (title != null) {
-      buffer.writeln('# $title');
-      buffer.writeln();
-    }
+  Future<String> _exportToPdf(
+    Directory directory,
+    String fileName,
+    Novel novel,
+    List<Chapter> chapters,
+  ) async {
+    final pdf = pw.Document();
 
+    // 添加封面页
+    pdf.addPage(
+      pw.Page(
+        build: (context) => pw.Center(
+          child: pw.Column(
+            mainAxisAlignment: pw.MainAxisAlignment.center,
+            children: [
+              pw.Text(
+                novel.title,
+                style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text('创建时间：${novel.createTime}'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 添加目录页
+    pdf.addPage(
+      pw.Page(
+        build: (context) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text('目录', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 20),
+            ...chapters.map((chapter) => pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 4),
+              child: pw.Text('第${chapter.number}章：${chapter.title}'),
+            )),
+          ],
+        ),
+      ),
+    );
+
+    // 添加章节内容
     for (final chapter in chapters) {
-      buffer.writeln('## 第${chapter.number}章：${chapter.title}');
-      buffer.writeln();
-      buffer.writeln(chapter.content);
-      buffer.writeln();
-      buffer.writeln('---');
-      buffer.writeln();
+      pdf.addPage(
+        pw.Page(
+          build: (context) => pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                '第${chapter.number}章：${chapter.title}',
+                style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text(chapter.content),
+            ],
+          ),
+        ),
+      );
     }
 
-    return buffer.toString();
+    final file = File(path.join(directory.path, '$fileName.pdf'));
+    await file.writeAsBytes(await pdf.save());
+    return '已导出到：${file.path}';
   }
 
-  String _generateHtmlContent(List<Chapter> chapters, String? title) {
+  Future<String> _exportToHtml(
+    Directory directory,
+    String fileName,
+    Novel novel,
+    List<Chapter> chapters,
+  ) async {
     final buffer = StringBuffer();
-    
-    buffer.writeln('<!DOCTYPE html>');
-    buffer.writeln('<html>');
-    buffer.writeln('<head>');
-    buffer.writeln('<meta charset="utf-8">');
-    buffer.writeln('<title>${title ?? '小说'}</title>');
-    buffer.writeln('<style>');
-    buffer.writeln('body { max-width: 800px; margin: 0 auto; padding: 20px; font-family: sans-serif; line-height: 1.6; }');
-    buffer.writeln('h1 { text-align: center; }');
-    buffer.writeln('h2 { margin-top: 2em; }');
-    buffer.writeln('.chapter { margin-bottom: 2em; }');
-    buffer.writeln('</style>');
-    buffer.writeln('</head>');
-    buffer.writeln('<body>');
 
-    if (title != null) {
-      buffer.writeln('<h1>$title</h1>');
-    }
+    // 写入HTML头部
+    buffer.write('''
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>${novel.title}</title>
+        <style>
+          body { max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+          h1 { text-align: center; margin: 2em 0; }
+          .chapter { margin: 2em 0; }
+          .chapter-title { font-size: 1.5em; font-weight: bold; margin: 1em 0; }
+          .chapter-content { text-indent: 2em; }
+        </style>
+      </head>
+      <body>
+        <h1>${novel.title}</h1>
+    ''');
+
+    // 写入目录
+    buffer.write('''
+      <div class="toc">
+        <h2>目录</h2>
+        <ul>
+    ''');
 
     for (final chapter in chapters) {
-      buffer.writeln('<div class="chapter">');
-      buffer.writeln('<h2>第${chapter.number}章：${chapter.title}</h2>');
-      buffer.writeln('<div class="content">');
-      buffer.writeln(chapter.content.replaceAll('\n', '<br>'));
-      buffer.writeln('</div>');
-      buffer.writeln('</div>');
+      buffer.write(
+        '<li><a href="#chapter-${chapter.number}">第${chapter.number}章：${chapter.title}</a></li>'
+      );
     }
 
-    buffer.writeln('</body>');
-    buffer.writeln('</html>');
+    buffer.write('</ul></div>');
 
-    return buffer.toString();
+    // 写入章节内容
+    for (final chapter in chapters) {
+      buffer.write('''
+        <div class="chapter" id="chapter-${chapter.number}">
+          <div class="chapter-title">第${chapter.number}章：${chapter.title}</div>
+          <div class="chapter-content">
+            ${chapter.content.split('\n').map((p) => '<p>$p</p>').join('\n')}
+          </div>
+        </div>
+      ''');
+    }
+
+    // 写入HTML尾部
+    buffer.write('</body></html>');
+
+    final file = File(path.join(directory.path, '$fileName.html'));
+    await file.writeAsString(buffer.toString());
+    return '已导出到：${file.path}';
   }
 } 

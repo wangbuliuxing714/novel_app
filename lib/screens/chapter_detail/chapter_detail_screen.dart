@@ -25,37 +25,29 @@ class ChapterDetailScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Obx(() {
-        // 获取最新的章节数据
-        final currentChapter = _novelController.getChapter(chapter.number) ?? chapter;
-        
-        return Container(
-          color: _themeController.getAdjustedBackgroundColor(),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '第${currentChapter.number}章：${currentChapter.title}',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  currentChapter.content,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    height: 1.8,
-                  ),
-                ),
-              ],
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '第${chapter.number}章：${chapter.title}',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-        );
-      }),
+            const SizedBox(height: 16),
+            Text(
+              chapter.content,
+              style: const TextStyle(
+                fontSize: 16,
+                height: 1.8,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 } 

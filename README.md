@@ -1,140 +1,204 @@
-# AI小说生成器 - Web版本
+# AI小说生成器项目文档
 
-这是AI小说生成器的Web版本，可以在任何操作系统上运行。
+## 项目结构
 
-## 运行要求
+```
+novel_app/
+├── lib/                    # 主要源代码目录
+│   ├── controllers/       # 控制器目录
+│   ├── models/           # 数据模型目录
+│   ├── prompts/          # AI提示词目录
+│   ├── screens/          # 界面目录
+│   ├── services/         # 服务目录
+│   └── main.dart         # 应用入口文件
+```
 
-- Python 3.6或更高版本
-- 现代浏览器（推荐Chrome、Firefox或Safari）
+## 主要目录说明
 
-## 如何运行
+### 1. controllers/ - 控制器目录
+- `api_config_controller.dart`: API配置控制器，管理AI服务的API设置
+- `novel_controller.dart`: 小说控制器，管理小说生成的核心逻辑
+- `genre_controller.dart`: 类型控制器，管理小说类型和分类
+- `style_controller.dart`: 风格控制器，管理写作风格
+- `theme_controller.dart`: 主题控制器，管理应用主题
+- `draft_controller.dart`: 草稿控制器，管理小说草稿
 
-1. 确保您的电脑已安装Python（Mac OS通常已预装Python）
-2. 双击运行`start_novel_app.py`文件
-   - 在Mac OS上：右键点击文件 -> 选择"打开方式" -> 选择"Python Launcher"
-   - 或者在终端中运行：`python start_novel_app.py`
-3. 应用会自动在您的默认浏览器中打开
-4. 要停止应用，请在终端中按Ctrl+C（Mac上是Command+C）
+### 2. models/ - 数据模型目录
+- `novel.dart`: 小说模型，定义小说的数据结构
+- `character_card.dart`: 角色卡片模型，定义角色的属性和方法
+- `character_type.dart`: 角色类型模型，定义角色类型的属性和方法
+
+### 3. prompts/ - AI提示词目录
+- `master_prompts.dart`: 主要提示词，定义AI写作的基本原则
+- `outline_generation.dart`: 大纲生成相关提示词
+- `chapter_generation.dart`: 章节生成相关提示词
+- `genre_prompts.dart`: 类型相关提示词
+- `character_prompts.dart`: 角色相关提示词
+
+### 4. screens/ - 界面目录
+- `home/`: 主页相关界面
+- `character_type/`: 角色类型管理界面
+- `character_card_list_screen.dart`: 角色卡片列表界面
+- `character_card_edit_screen.dart`: 角色卡片编辑界面
+- `genre_manager_screen.dart`: 类型管理界面
+- `module_repository_screen.dart`: 模块仓库界面
+
+### 5. services/ - 服务目录
+- `ai_service.dart`: AI服务，处理与AI API的通信
+- `novel_generator_service.dart`: 小说生成服务，处理小说生成的核心逻辑
+- `character_type_service.dart`: 角色类型服务，管理角色类型数据
+- `character_card_service.dart`: 角色卡片服务，管理角色卡片数据
+- `cache_service.dart`: 缓存服务，管理数据缓存
+- `content_review_service.dart`: 内容审查服务，检查生成内容的质量
+
+## 小说生成流程
+
+### 1. 用户输入阶段
+1. 用户在主界面输入：
+   - 小说标题
+   - 选择小说类型（最多5个）
+   - 选择角色类型和角色卡片
+   - 设置章节数量
+   - 输入背景设定和其他要求
+
+### 2. 大纲生成阶段
+1. `NovelController`调用`NovelGeneratorService`的`generateNovel`方法
+2. 系统根据用户输入构建提示词：
+   ```dart
+   final systemPrompt = OutlineGeneration.getSystemPrompt(title, genre, theme);
+   final outlinePrompt = OutlineGeneration.getOutlinePrompt(title, genre, theme, totalChapters);
+   ```
+3. 分批生成大纲（每批10章）：
+   ```dart
+   for (int start = 1; start <= totalChapters; start += batchSize) {
+     final end = (start + batchSize - 1).clamp(1, totalChapters);
+     // 生成大纲内容
+   }
+   ```
+
+### 3. 章节生成阶段
+1. 系统根据生成的大纲，开始逐章生成内容：
+   ```dart
+   final List<Chapter> chapters = [];
+   for (int i = 1; i <= totalChapters; i++) {
+     final chapter = await generateChapter(
+       title: title,
+       number: i,
+       outline: outline,
+       previousChapters: chapters,  // 传入之前生成的章节
+       totalChapters: totalChapters,
+       genre: genre,
+       theme: theme,
+     );
+     chapters.add(chapter);
+   }
+   ```
+
+2. 每个章节的生成过程：
+   - 构建章节专用的系统提示词
+   - 根据大纲和前文构建用户提示词
+   - 动态调整生成参数
+   - 生成内容并进行格式化
+   - 进行内容审查和质量验证
+
+3. 动态调整生成参数：
+   - 根据章节进度调整temperature（创造性）
+   - 根据章节长度调整maxTokens（令牌数量）
+
+### 4. 内容审查阶段
+1. 检查生成内容的质量：
+   - 验证章节长度
+   - 检查内容连贯性
+   - 检查是否重复
+2. 必要时重新生成内容
+
+### 5. 最终处理
+1. 将所有生成的内容整合到Novel对象中：
+   ```dart
+   return Novel(
+     title: title,
+     genre: genre,
+     outline: outline,
+     content: chapters.map((c) => c.content).join('\n\n'),
+     chapters: chapters,
+     createdAt: DateTime.now(),
+   );
+   ```
+
+2. 保存生成的内容：
+   - 将小说保存到本地存储
+   - 更新用户界面显示
+   - 提供导出和分享功能
+
+## 模块仓库功能
+
+### 1. 类型管理模块
+- 功能：管理小说类型和分类
+- 实现：
+  ```dart
+  class GenreController extends GetxController {
+    // 添加新分类
+    Future<void> addCategory(GenreCategory category) async {
+      categories.add(category);
+      await _saveCustomGenres();
+    }
+    
+    // 添加新类型
+    Future<void> addGenre(int categoryIndex, NovelGenre genre) async {
+      // 添加类型实现
+    }
+  }
+  ```
+
+### 2. 角色管理模块
+- 功能：管理角色类型和角色卡片
+- 实现：
+  ```dart
+  class CharacterTypeService extends GetxService {
+    // 添加角色类型
+    Future<void> addCharacterType(CharacterType type) async {
+      characterTypes.add(type);
+      await _saveToStorage();
+    }
+  }
+  
+  class CharacterCardService extends GetxService {
+    // 添加角色卡片
+    Future<void> addCard(CharacterCard card) async {
+      cards.add(card);
+      await _saveCards();
+    }
+  }
+  ```
+
+### 3. 写作风格模块
+- 功能：管理写作风格和提示词
+- 实现：通过`StyleController`管理不同的写作风格和对应的提示词
+
+## 数据存储
+
+### 1. 本地存储
+- 使用`SharedPreferences`存储配置和小型数据
+- 使用`Hive`存储大型数据（如生成的章节）
+
+### 2. 缓存机制
+- 使用`CacheService`管理数据缓存
+- 缓存生成的内容以提高性能
+- 实现内容查重和验证
 
 ## 注意事项
 
-- 应用运行时请保持终端窗口开启
-- 如果浏览器没有自动打开，请手动访问终端中显示的地址
-- 所有数据都会保存在浏览器的本地存储中
-- 建议定期导出重要的内容
+1. 生成过程中的错误处理：
+   - 网络错误自动重试
+   - 内容生成失败时的回退机制
+   - 用户取消操作的处理
 
-## 常见问题
+2. 性能优化：
+   - 分批生成大纲和章节
+   - 缓存已生成的内容
+   - 异步处理耗时操作
 
-Q: 运行时提示"python不是内部或外部命令"？
-A: 需要安装Python，请访问 https://www.python.org/downloads/ 下载安装
-
-Q: 浏览器打开后显示空白页面？
-A: 请尝试刷新页面，或使用Chrome浏览器打开
-
-Q: 如何备份生成的内容？
-A: 使用应用中的导出功能，将内容导出为文件保存
-
-小说生成器使用说明
-
- 功能介绍
-
-这是一个基于多个AI大语言模型的小说生成器，支持以下功能：
-- 自动生成小说大纲和章节内容
-- 支持多个AI模型：Gemini Pro、Gemini Flash、通义千问、Deepseek
-- 小说导出和分享功能
-- 自定义API配置
-
- 模型配置说明
-
- 1. Gemini Pro / Gemini Flash
-- 访问 [Google AI Studio](https://makersuite.google.com/app/apikey) 创建API密钥
-  - 手机浏览器访问时请选择"请求桌面网站"
-  - 需要登录Google账号
-  - 点击"Create API key"按钮创建新密钥
-- 在设置页面选择 Gemini Pro 或 Gemini Flash
-- API地址: https://generativelanguage.googleapis.com/v1
-- 将获取的API密钥填入API Key输入框
-
- 2. 通义千问
-- 访问 [阿里云控制台](https://dashscope.console.aliyun.com/) 创建API密钥
-  - 支持手机浏览器直接访问
-  - 使用阿里云账号登录
-  - 进入"API Key管理"页面创建密钥
-- 在设置页面选择通义千问模型
-- API地址: https://dashscope.aliyuncs.com/compatible-mode/v1
-- 将获取的API密钥填入API Key输入框
-- 注意：通义千问API密钥不需要添加"Bearer "前缀
-
- 3. Deepseek
-- 访问 [Deepseek官网](https://platform.deepseek.com/) 注册账号
-  - 注册并登录账号
-  - 在"API Keys"页面生成新密钥
-- 在设置页面选择Deepseek模型
-- API地址: https://api.deepseek.com/v1
-- 将获取的API密钥填入API Key输入框
-
- 获取API密钥的通用建议
-1. 建议使用手机Chrome等主流浏览器访问
-2. 如遇到页面显示异常，可以：
-   - 开启浏览器的"请求桌面网站"功能
-   - 横屏使用以获得更好的显示效果
-   - 必要时可以使用电脑访问
-3. 复制API密钥时请确保：
-   - 完整复制，不要漏掉字符
-   - 注意区分字母大小写
-   - 避免多余的空格
-
- 使用步骤
-
-1. 首次使用时，请先进入设置页面配置API：
-   - 选择要使用的AI模型
-   - 填入对应的API密钥
-   - 确认API地址正确
-
-2. 返回主页面，点击"新建小说"：
-   - 输入小说标题
-   - 选择小说类型
-   - 设置生成参数（如章节数量等）
-   - 点击生成按钮开始创作
-
-3. 查看和导出：
-   - 在主页面可以查看所有已生成的小说
-   - 点击小说卡片进入详情页
-   - 在详情页可以查看大纲和章节内容
-   - 点击顶部分享按钮可以导出小说
-
- 注意事项
-
-1. API密钥安全：
-   - 请妥善保管您的API密钥
-   - 不要分享给他人
-   - 定期更换密钥以确保安全
-
-2. 使用限制：
-   - 不同模型可能有不同的速率限制
-   - 建议在生成较长篇幅时使用稳定的网络连接
-   - 如遇到超时错误，可以尝试重新生成
-
-3. 存储权限：
-   - 导出功能需要存储权限
-   - 首次使用时请授予应用存储权限
-   - 导出的文件保存在设备的外部存储目录
-
- 常见问题
-
-1. API密钥无效
-   - 检查密钥是否正确复制
-   - 确认是否选择了正确的模型
-   - 验证API密钥是否过期
-
-2. 生成失败
-   - 检查网络连接
-   - 确认API配置正确
-   - 查看错误提示信息
-
-3. 导出失败
-   - 确认已授予存储权限
-   - 检查设备存储空间是否充足
-   - 尝试重新导出
-
-如有其他问题，请提供具体的错误信息以便我们协助解决。
+3. 用户体验：
+   - 实时显示生成进度
+   - 提供生成过程的取消功能
+   - 支持断点续传

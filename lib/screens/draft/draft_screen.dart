@@ -33,11 +33,13 @@ class DraftScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Container(
-        color: _themeController.getAdjustedBackgroundColor(),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: isTablet ? _buildTabletLayout() : _buildPhoneLayout(),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 草稿内容
+          ],
         ),
       ),
     );

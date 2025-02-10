@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:get/get.dart';
-import 'package:novel_app/models/genre_category.dart';
+import 'package:novel_app/prompts/genre_prompts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class GenreController extends GetxController {
@@ -9,7 +9,7 @@ class GenreController extends GetxController {
   final String _customGenresKey = 'custom_genres';
   
   // 默认类型列表
-  final List<GenreCategory> _defaultCategories = GenreCategories.categories;
+  final List<GenreCategory> _defaultCategories = GenrePrompts.categories;
 
   @override
   void onInit() {
@@ -18,13 +18,13 @@ class GenreController extends GetxController {
   }
 
   void _loadGenres() {
-    // 首先加载默认类型
-    categories.addAll(_defaultCategories);
-    
-    // 然后加载自定义类型
-    final customGenresJson = _prefs.getString(_customGenresKey);
-    if (customGenresJson != null) {
-      try {
+    try {
+      // 首先加载默认类型
+      categories.addAll(_defaultCategories);
+      
+      // 然后加载自定义类型
+      final customGenresJson = _prefs.getString(_customGenresKey);
+      if (customGenresJson != null) {
         final List<dynamic> customGenresList = jsonDecode(customGenresJson);
         final List<GenreCategory> customCategories = customGenresList
             .map((json) => GenreCategory(
@@ -39,31 +39,40 @@ class GenreController extends GetxController {
                 ))
             .toList();
         categories.addAll(customCategories);
-      } catch (e) {
-        print('加载自定义类型失败: $e');
+      }
+    } catch (e) {
+      print('加载类型失败: $e');
+      // 如果加载失败，至少确保默认类型可用
+      if (categories.isEmpty) {
+        categories.addAll(_defaultCategories);
       }
     }
   }
 
-  void _saveCustomGenres() {
-    final customCategories = categories
-        .where((category) => !_isDefaultCategory(category.name))
-        .toList();
-    
-    final customGenresJson = jsonEncode(customCategories
-        .map((category) => {
-              'name': category.name,
-              'genres': category.genres
-                  .map((genre) => {
-                        'name': genre.name,
-                        'description': genre.description,
-                        'prompt': genre.prompt,
-                      })
-                  .toList(),
-            })
-        .toList());
-    
-    _prefs.setString(_customGenresKey, customGenresJson);
+  Future<void> _saveCustomGenres() async {
+    try {
+      final customCategories = categories
+          .where((category) => !_isDefaultCategory(category.name))
+          .toList();
+      
+      final customGenresJson = jsonEncode(customCategories
+          .map((category) => {
+                'name': category.name,
+                'genres': category.genres
+                    .map((genre) => {
+                          'name': genre.name,
+                          'description': genre.description,
+                          'prompt': genre.prompt,
+                        })
+                    .toList(),
+              })
+          .toList());
+      
+      await _prefs.setString(_customGenresKey, customGenresJson);
+    } catch (e) {
+      print('保存类型失败: $e');
+      rethrow;
+    }
   }
 
   bool _isDefaultCategory(String categoryName) {
@@ -81,22 +90,22 @@ class GenreController extends GetxController {
     return defaultCategory.genres.any((genre) => genre.name == genreName);
   }
 
-  void addCategory(GenreCategory category) {
+  Future<void> addCategory(GenreCategory category) async {
     if (!categories.any((c) => c.name == category.name)) {
       categories.add(category);
-      _saveCustomGenres();
+      await _saveCustomGenres();
     }
   }
 
-  void deleteCategory(int index) {
+  Future<void> deleteCategory(int index) async {
     final category = categories[index];
     if (!_isDefaultCategory(category.name)) {
       categories.removeAt(index);
-      _saveCustomGenres();
+      await _saveCustomGenres();
     }
   }
 
-  void addGenre(int categoryIndex, NovelGenre genre) {
+  Future<void> addGenre(int categoryIndex, NovelGenre genre) async {
     if (!categories[categoryIndex].genres.any((g) => g.name == genre.name)) {
       final category = categories[categoryIndex];
       final updatedGenres = List<NovelGenre>.from(category.genres)..add(genre);
@@ -104,22 +113,24 @@ class GenreController extends GetxController {
         name: category.name,
         genres: updatedGenres,
       );
-      _saveCustomGenres();
+      await _saveCustomGenres();
     }
   }
 
-  void updateGenre(int categoryIndex, int genreIndex, NovelGenre newGenre) {
+  Future<void> updateGenre(int categoryIndex, int genreIndex, NovelGenre newGenre) async {
     final category = categories[categoryIndex];
-    final updatedGenres = List<NovelGenre>.from(category.genres);
-    updatedGenres[genreIndex] = newGenre;
-    categories[categoryIndex] = GenreCategory(
-      name: category.name,
-      genres: updatedGenres,
-    );
-    _saveCustomGenres();
+    if (!isDefaultGenre(category.name, category.genres[genreIndex].name)) {
+      final updatedGenres = List<NovelGenre>.from(category.genres);
+      updatedGenres[genreIndex] = newGenre;
+      categories[categoryIndex] = GenreCategory(
+        name: category.name,
+        genres: updatedGenres,
+      );
+      await _saveCustomGenres();
+    }
   }
 
-  void deleteGenre(int categoryIndex, int genreIndex) {
+  Future<void> deleteGenre(int categoryIndex, int genreIndex) async {
     final category = categories[categoryIndex];
     final genre = category.genres[genreIndex];
     if (!isDefaultGenre(category.name, genre.name)) {
@@ -129,7 +140,26 @@ class GenreController extends GetxController {
         name: category.name,
         genres: updatedGenres,
       );
-      _saveCustomGenres();
+      await _saveCustomGenres();
     }
+  }
+
+  // 获取所有可用的类型名称列表
+  List<String> getAllGenreNames() {
+    return categories
+        .expand((category) => category.genres)
+        .map((genre) => genre.name)
+        .toList();
+  }
+
+  // 根据类型名称获取提示词
+  String? getPromptByGenreName(String genreName) {
+    for (var category in categories) {
+      final genre = category.genres.firstWhereOrNull((g) => g.name == genreName);
+      if (genre != null) {
+        return genre.prompt;
+      }
+    }
+    return null;
   }
 } 

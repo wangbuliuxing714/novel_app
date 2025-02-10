@@ -1,57 +1,203 @@
+// 类型提示词文件
+// 包含各种小说类型的特定要求和提示词
+// 在 GenreController 和 NovelGeneratorService 中使用
+
+class NovelGenre {
+  final String name;
+  final String description;
+  final String prompt;
+
+  const NovelGenre({
+    required this.name,
+    required this.description,
+    required this.prompt,
+  });
+}
+
+class GenreCategory {
+  final String name;
+  final List<NovelGenre> genres;
+
+  const GenreCategory({
+    required this.name,
+    required this.genres,
+  });
+}
+
 class GenrePrompts {
-  static const Map<String, String> templates = {
-    '都市异能': '''类型：都市异能
-常见题材：重生、系统流、赘婿、神豪
-核心要素：
-1. 都市背景：现代都市生活、商战职场
-2. 异能设定：系统、重生、金手指、特殊能力
-3. 装逼打脸：打脸白富美、收服高冷校花
-4. 事业发展：商业帝国、娱乐圈、职场升迁
-5. 感情路线：校花、女总裁、邻家女孩
-关键词：逆袭、打脸、装逼、碾压、无敌''',
+  static const List<GenreCategory> categories = [
+    GenreCategory(
+      name: '都市现代',
+      genres: [
+        NovelGenre(
+          name: '都市异能',
+          description: '都市背景下的超能力故事',
+          prompt: '都市异能：重生、系统流、赘婿、神豪等元素',
+        ),
+        NovelGenre(
+          name: '娱乐圈',
+          description: '演艺圈发展故事',
+          prompt: '娱乐圈：星探、试镜、爆红、黑料等元素',
+        ),
+        NovelGenre(
+          name: '职场商战',
+          description: '职场或商业竞争故事',
+          prompt: '职场商战：升职加薪、商业谈判、公司运营等元素',
+        ),
+        NovelGenre(
+          name: '亿万富翁',
+          description: '富豪人生故事',
+          prompt: '亿万富翁：财富积累、商业帝国、豪门生活等元素',
+        ),
+      ],
+    ),
+    GenreCategory(
+      name: '玄幻修仙',
+      genres: [
+        NovelGenre(
+          name: '玄幻修仙',
+          description: '修真问道的故事',
+          prompt: '玄幻修仙：修炼体系、宗门势力、天材地宝等元素',
+        ),
+        NovelGenre(
+          name: '重生',
+          description: '重获新生的故事',
+          prompt: '重生：前世记忆、改变命运、复仇崛起等元素',
+        ),
+        NovelGenre(
+          name: '系统流',
+          description: '获得系统的故事',
+          prompt: '系统流：金手指、任务奖励、属性面板等元素',
+        ),
+      ],
+    ),
+    GenreCategory(
+      name: '游戏竞技',
+      genres: [
+        NovelGenre(
+          name: '电竞',
+          description: '电子竞技故事',
+          prompt: '电竞：职业选手、战队训练、比赛竞技等元素',
+        ),
+        NovelGenre(
+          name: '游戏',
+          description: '游戏世界的故事',
+          prompt: '游戏：虚拟世界、副本攻略、公会组织等元素',
+        ),
+        NovelGenre(
+          name: '无限流',
+          description: '轮回闯关的故事',
+          prompt: '无限流：任务世界、轮回闯关、积分兑换等元素',
+        ),
+      ],
+    ),
+    GenreCategory(
+      name: '科幻未来',
+      genres: [
+        NovelGenre(
+          name: '末世',
+          description: '末日求生的故事',
+          prompt: '末世：病毒爆发、丧尸横行、废土重建等元素',
+        ),
+        NovelGenre(
+          name: '赛博朋克',
+          description: '高科技低生活的故事',
+          prompt: '赛博朋克：机械改造、黑客技术、巨型企业等元素',
+        ),
+        NovelGenre(
+          name: '机器人觉醒',
+          description: 'AI觉醒的故事',
+          prompt: '机器人觉醒：人工智能、机械文明、人机共存等元素',
+        ),
+      ],
+    ),
+    GenreCategory(
+      name: '古代历史',
+      genres: [
+        NovelGenre(
+          name: '宫斗',
+          description: '后宫争斗的故事',
+          prompt: '宫斗：后宫争宠、权谋算计、皇权斗争等元素',
+        ),
+        NovelGenre(
+          name: '穿越',
+          description: '穿越时空的故事',
+          prompt: '穿越：时空穿梭、历史改变、文化冲突等元素',
+        ),
+        NovelGenre(
+          name: '种田',
+          description: '农家生活的故事',
+          prompt: '种田：农家生活、乡村发展、生活技能等元素',
+        ),
+        NovelGenre(
+          name: '民国',
+          description: '民国时期的故事',
+          prompt: '民国：乱世生存、谍战情报、革命斗争等元素',
+        ),
+      ],
+    ),
+    GenreCategory(
+      name: '情感',
+      genres: [
+        NovelGenre(
+          name: '言情',
+          description: '纯爱故事',
+          prompt: '言情：甜宠恋爱、情感纠葛、浪漫邂逅等元素',
+        ),
+        NovelGenre(
+          name: '虐文',
+          description: '虐心故事',
+          prompt: '虐文：情感折磨、误会纠葛、痛苦救赎等元素',
+        ),
+        NovelGenre(
+          name: '禁忌之恋',
+          description: '禁忌感情故事',
+          prompt: '禁忌之恋：身份差距、伦理冲突、命运阻隔等元素',
+        ),
+        NovelGenre(
+          name: '耽美',
+          description: '男男感情故事',
+          prompt: '耽美：男男情感、相知相守、甜虐交织等元素',
+        ),
+      ],
+    ),
+    GenreCategory(
+      name: '其他题材',
+      genres: [
+        NovelGenre(
+          name: '灵异',
+          description: '灵异故事',
+          prompt: '灵异：鬼怪神秘、通灵驱邪、阴阳交界等元素',
+        ),
+        NovelGenre(
+          name: '悬疑',
+          description: '悬疑推理故事',
+          prompt: '悬疑：案件侦破、推理解谜、心理较量等元素',
+        ),
+        NovelGenre(
+          name: '沙雕',
+          description: '搞笑欢乐故事',
+          prompt: '沙雕：欢乐搞笑、日常吐槽、轻松愉快等元素',
+        ),
+        NovelGenre(
+          name: '直播',
+          description: '直播生活故事',
+          prompt: '直播：网络主播、粉丝互动、直播生态等元素',
+        ),
+      ],
+    ),
+  ];
 
-    '玄幻修仙': '''类型：玄幻修仙
-常见题材：修仙、斗气、神魔、洪荒
-核心要素：
-1. 修炼体系：功法、境界、丹药、法宝
-2. 世界设定：宗门、势力、秘境、机缘
-3. 战斗场景：斗法、厮杀、夺宝、争锋
-4. 情感线索：仙子、魔女、圣女、师妹
-5. 终极目标：飞升、成圣、证道、封神
-关键词：修炼、突破、横扫、镇压、无敌''',
-
-    '末世危机': '''类型：末世危机
-常见题材：丧尸、病毒、废土、求生
-核心要素：
-1. 灾难背景：病毒爆发、丧尸横行、世界崩塌
-2. 特殊能力：异能觉醒、系统、基因进化
-3. 生存法则：物资、基地、势力、抱团
-4. 情感设定：同生共死、患难与共
-5. 发展路线：基地发展、势力扩张、拯救世界
-关键词：求生、进化、崛起、征服、重建''',
-
-    '游戏竞技': '''类型：游戏竞技
-常见题材：电竞、网游、虚拟现实
-核心要素：
-1. 游戏设定：职业、技能、装备、副本
-2. 比赛系统：排位、比赛、锦标赛、世界赛
-3. 成长路线：菜鸟、高手、职业、冠军
-4. 团队关系：战队、公会、队友、对手
-5. 情感发展：女神、队友、对手
-关键词：天才、操作、连胜、制霸、封神''',
-
-    '历史架空': '''类型：历史架空
-常见题材：穿越、位面、朝代、权谋
-核心要素：
-1. 时代背景：朝代、历史事件、风云际会
-2. 主角身份：皇子、将军、商人、谋士
-3. 权力斗争：朝堂、战场、商场、江湖
-4. 感情线索：公主、贵女、侠女、歌姬
-5. 发展路线：封王拜相、一统天下
-关键词：谋略、权谋、争霸、统一、称帝''',
-  };
-
+  /// 根据小说类型获取提示词
   static String getPromptByGenre(String genre) {
-    return templates[genre] ?? templates['都市异能']!;
+    for (var category in categories) {
+      for (var novelGenre in category.genres) {
+        if (novelGenre.name == genre) {
+          return novelGenre.prompt;
+        }
+      }
+    }
+    // 如果找不到对应类型，返回都市异能的提示词作为默认值
+    return categories[0].genres[0].prompt;
   }
 } 

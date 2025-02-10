@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:novel_app/screens/genre_manager_screen.dart';
 import 'package:novel_app/screens/style_manager_screen.dart';
-import 'package:novel_app/screens/outline_prompt_screen.dart';
+import 'package:novel_app/screens/character_card_list_screen.dart';
+import 'package:novel_app/screens/character_type/character_type_screen.dart';
 
 class ModuleRepositoryScreen extends StatelessWidget {
   const ModuleRepositoryScreen({super.key});
@@ -35,10 +36,17 @@ class ModuleRepositoryScreen extends StatelessWidget {
           ),
           _buildModuleCard(
             context,
-            icon: Icons.format_list_bulleted,
-            title: '大纲提示词',
-            description: '管理大纲生成模板',
-            onTap: () => Get.to(OutlinePromptScreen()),
+            icon: Icons.people,
+            title: '角色卡片',
+            description: '管理小说角色信息',
+            onTap: () => Get.to(() => CharacterCardListScreen()),
+          ),
+          _buildModuleCard(
+            context,
+            icon: Icons.person_outline,
+            title: '角色类型',
+            description: '管理角色类型和关系',
+            onTap: () => Get.to(() => CharacterTypeScreen()),
           ),
         ],
       ),
@@ -51,6 +59,7 @@ class ModuleRepositoryScreen extends StatelessWidget {
     required String title,
     required String description,
     required VoidCallback onTap,
+    bool isLocked = false,
   }) {
     return Card(
       elevation: 2,

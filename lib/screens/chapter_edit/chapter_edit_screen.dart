@@ -175,7 +175,7 @@ class _ChapterEditScreenState extends State<ChapterEditScreen> {
                     maxHeight: MediaQuery.of(context).size.height * 0.3,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
+                    color: Theme.of(context).scaffoldBackgroundColor,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   margin: const EdgeInsets.symmetric(vertical: 8),

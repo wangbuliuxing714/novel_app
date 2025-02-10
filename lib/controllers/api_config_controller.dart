@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:novel_app/services/ai_service.dart';
+import 'package:get_storage/get_storage.dart';
 
 class ModelConfig {
   String name;           // 模型名称
@@ -149,6 +150,17 @@ class ApiConfigController extends GetxController {
     ),
   ];
 
+  final _storage = GetStorage();
+  final apiKey = ''.obs;
+  final baseUrl = ''.obs;
+  final ttsApiKey = ''.obs;
+  final isTextToSpeechMode = false.obs;
+
+  static const String _apiKeyKey = 'api_key';
+  static const String _baseUrlKey = 'base_url';
+  static const String _ttsApiKeyKey = 'tts_api_key';
+  static const String _configModeKey = 'config_mode';
+
   @override
   void onInit() async {
     super.onInit();
@@ -158,6 +170,7 @@ class ApiConfigController extends GetxController {
       selectedModelId.value = models[0].name;
       _updateCurrentModelConfig();
     }
+    _loadConfig();
   }
 
   Future<void> _initHive() async {
@@ -293,5 +306,32 @@ class ApiConfigController extends GetxController {
     models.addAll(_defaultModels);
     selectedModelId.value = models[0].name;
     _updateCurrentModelConfig();
+  }
+
+  void _loadConfig() {
+    apiKey.value = _storage.read(_apiKeyKey) ?? '';
+    baseUrl.value = _storage.read(_baseUrlKey) ?? '';
+    ttsApiKey.value = _storage.read(_ttsApiKeyKey) ?? '';
+    isTextToSpeechMode.value = _storage.read(_configModeKey) ?? false;
+  }
+
+  void setApiKey(String value) {
+    apiKey.value = value;
+    _storage.write(_apiKeyKey, value);
+  }
+
+  void setBaseUrl(String value) {
+    baseUrl.value = value;
+    _storage.write(_baseUrlKey, value);
+  }
+
+  void setTTSApiKey(String value) {
+    ttsApiKey.value = value;
+    _storage.write(_ttsApiKeyKey, value);
+  }
+
+  void toggleConfigMode() {
+    isTextToSpeechMode.value = !isTextToSpeechMode.value;
+    _storage.write(_configModeKey, isTextToSpeechMode.value);
   }
 } 

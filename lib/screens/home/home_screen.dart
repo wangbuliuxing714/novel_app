@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:novel_app/controllers/novel_controller.dart';
 import 'package:novel_app/models/novel.dart';
-import 'package:novel_app/models/genre_category.dart';
+import 'package:novel_app/prompts/genre_prompts.dart';
+import 'package:novel_app/models/character_card.dart';
+import 'package:novel_app/models/character_type.dart';
 import 'package:novel_app/screens/novel_detail_screen.dart';
 import 'package:novel_app/screens/settings_screen.dart';
 import 'package:novel_app/screens/prompt_management_screen.dart';
@@ -12,6 +14,9 @@ import 'package:novel_app/screens/genre_manager_screen.dart';
 import 'package:novel_app/controllers/genre_controller.dart';
 import 'package:novel_app/screens/module_repository_screen.dart';
 import 'package:novel_app/controllers/style_controller.dart';
+import 'package:novel_app/services/character_type_service.dart';
+import 'package:novel_app/services/character_card_service.dart';
+import 'package:novel_app/screens/character_card_list_screen.dart';
 
 class HomeScreen extends GetView<NovelController> {
   const HomeScreen({super.key});
@@ -22,8 +27,13 @@ class HomeScreen extends GetView<NovelController> {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI小说生成器'),
+        title: const Text('岱宗文脉'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.build),
+            tooltip: '工具广场',
+            onPressed: () => Get.toNamed('/tools'),
+          ),
           IconButton(
             icon: const Icon(Icons.apps),
             tooltip: '模块仓库',
@@ -56,6 +66,14 @@ class HomeScreen extends GetView<NovelController> {
               ),
             ),
             ListTile(
+              leading: const Icon(Icons.library_books),
+              title: const Text('我的书库'),
+              onTap: () {
+                Get.back();
+                Get.toNamed('/library');
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.help_outline),
               title: const Text('帮助'),
               onTap: () {
@@ -72,132 +90,34 @@ class HomeScreen extends GetView<NovelController> {
               },
             ),
             const Divider(),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '阅读设置',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Obx(() => Switch(
-                        value: themeController.isEyeProtectionMode,
-                        onChanged: (_) => themeController.toggleTheme(),
-                      )),
-                      const Text('护眼模式'),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('背景颜色'),
-                  const SizedBox(height: 8),
-                  Container(
-                    height: 40,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      children: [
-                        for (final color in themeController.presetColors)
-                          Expanded(
-                            child: Obx(() {
-                              final isSelected = themeController.backgroundColor.value == color;
-                              return Stack(
-                                children: [
-                                  InkWell(
-                                    onTap: () => themeController.setBackgroundColor(color),
-                                    child: Container(
-                                      margin: const EdgeInsets.all(2),
-                                      decoration: BoxDecoration(
-                                        color: color,
-                                        border: Border.all(
-                                          color: isSelected ? Colors.blue : Colors.grey.shade300,
-                                          width: isSelected ? 2 : 1,
-                                        ),
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                    ),
-                                  ),
-                                  if (isSelected)
-                                    const Positioned(
-                                      right: 2,
-                                      top: 2,
-                                      child: Icon(
-                                        Icons.check_circle,
-                                        size: 16,
-                                        color: Colors.blue,
-                                      ),
-                                    ),
-                                ],
-                              );
-                            }),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('色温调节'),
-                      Obx(() => Text(
-                        '${themeController.colorTemperature.round()}K',
-                        style: const TextStyle(color: Colors.grey),
-                      )),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Obx(() => Column(
-                    children: [
-                      Slider(
-                        value: themeController.colorTemperature,
-                        min: 2000,
-                        max: 10000,
-                        divisions: 80,
-                        label: '${themeController.colorTemperature.round()}K',
-                        onChanged: (value) => themeController.setColorTemperature(value),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('暖色', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                          const Text('标准', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                          const Text('冷色', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                        ],
-                      ),
-                    ],
-                  )),
-                ],
-              ),
+            ListTile(
+              leading: Obx(() => Icon(
+                themeController.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+              )),
+              title: const Text('暗黑模式'),
+              trailing: Obx(() => Switch(
+                value: themeController.isDarkMode,
+                onChanged: (_) => themeController.toggleTheme(),
+              )),
             ),
           ],
         ),
       ),
-      body: Container(
-        color: themeController.getAdjustedBackgroundColor(),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildGeneratorForm(),
-                const SizedBox(height: 20),
-                _buildGenerationStatus(),
-                const SizedBox(height: 20),
-                SizedBox(
-                  height: 300,
-                  child: _buildNovelList(),
-                ),
-              ],
-            ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildGeneratorForm(),
+              const SizedBox(height: 20),
+              _buildGenerationStatus(),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: 300,
+                child: _buildNovelList(),
+              ),
+            ],
           ),
         ),
       ),
@@ -211,12 +131,16 @@ class HomeScreen extends GetView<NovelController> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
-              decoration: const InputDecoration(
-                labelText: '小说标题',
-                hintText: '请输入小说标题',
-              ),
-              onChanged: controller.updateTitle,
+            Row(
+              children: [
+                Expanded(child: _TitleInput()),
+                const SizedBox(width: 16),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text('导入大纲'),
+                  onPressed: () => _showImportOutlineDialog(Get.context!),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             _buildGenreSelector(),
@@ -235,23 +159,7 @@ class HomeScreen extends GetView<NovelController> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: '主角设定',
-                        hintText: '例如：张伟，大学生，性格开朗',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: controller.updateMainCharacter,
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: '女主角设定',
-                        hintText: '例如：李玲，校花，性格温柔',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: controller.updateFemaleCharacter,
-                    ),
+                    _buildCharacterSelector(),
                     const SizedBox(height: 12),
                     TextField(
                       decoration: const InputDecoration(
@@ -300,18 +208,31 @@ class HomeScreen extends GetView<NovelController> {
                     child: Slider(
                       value: controller.totalChapters.value.toDouble(),
                       min: 1,
-                      max: 100,
-                      divisions: 99,
+                      max: 1000,
+                      divisions: 999,
                       label: controller.totalChapters.value.toString(),
                       onChanged: (value) =>
                           controller.updateTotalChapters(value.toInt()),
                     ),
                   ),
                   SizedBox(
-                    width: 50,
-                    child: Text(
-                      '${controller.totalChapters.value}章',
-                      style: const TextStyle(fontSize: 14),
+                    width: 80,
+                    child: TextField(
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                        suffix: Text('章'),
+                      ),
+                      controller: TextEditingController(
+                        text: controller.totalChapters.value.toString(),
+                      ),
+                      onSubmitted: (value) {
+                        final chapters = int.tryParse(value);
+                        if (chapters != null && chapters > 0) {
+                          controller.updateTotalChapters(chapters);
+                        }
+                      },
                     ),
                   ),
                 ],
@@ -321,27 +242,37 @@ class HomeScreen extends GetView<NovelController> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                ElevatedButton(
-                  onPressed: () {
-                    if (controller.isGenerating.value) {
-                      controller.stopGeneration();
-                    } else {
-                      controller.startGeneration();
-                    }
-                  },
-                  child: Obx(() => Text(
-                    controller.isGenerating.value ? '停止生成' : '开始生成',
+                Builder(
+                  builder: (context) => Obx(() => ElevatedButton.icon(
+                    onPressed: () {
+                      if (controller.isGenerating.value) {
+                        controller.stopGeneration();
+                      } else {
+                        controller.startGeneration();
+                      }
+                    },
+                    icon: Icon(
+                      controller.isGenerating.value ? Icons.pause : Icons.play_arrow,
+                    ),
+                    label: Text(
+                      controller.isGenerating.value ? '暂停生成' : '开始生成',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
                   )),
                 ),
-                const SizedBox(height: 10),
                 Builder(
                   builder: (context) => ElevatedButton.icon(
-                    onPressed: () => Get.toNamed('/storage'),
-                    icon: const Icon(Icons.storage),
-                    label: const Text('已生成章节'),
+                    onPressed: () {
+                      _showDialog(context);
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('开始新小说'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Theme.of(context).colorScheme.secondary,
                       foregroundColor: Theme.of(context).colorScheme.onSecondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     ),
                   ),
                 ),
@@ -349,6 +280,56 @@ class HomeScreen extends GetView<NovelController> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showImportOutlineDialog(BuildContext context) {
+    final textController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('导入大纲'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: textController,
+              maxLines: 10,
+              decoration: const InputDecoration(
+                hintText: '''请输入JSON格式的大纲，例如：
+{
+  "novel_title": "小说标题",
+  "chapters": [
+    {
+      "chapter_number": 1,
+      "chapter_title": "第一章",
+      "content_outline": "章节大纲内容"
+    }
+  ]
+}''',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final result = await controller.importOutline(textController.text);
+              Navigator.pop(context);
+              if (result) {
+                Get.snackbar('成功', '大纲导入成功');
+              }
+            },
+            child: const Text('导入'),
+          ),
+        ],
       ),
     );
   }
@@ -423,6 +404,131 @@ class HomeScreen extends GetView<NovelController> {
     );
   }
 
+  Widget _buildCharacterSelector() {
+    final characterTypeService = Get.find<CharacterTypeService>();
+    final characterCardService = Get.find<CharacterCardService>();
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '选择角色',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Obx(() => Column(
+          children: characterTypeService.characterTypes.map((type) {
+            final isSelected = controller.selectedCharacterTypes.contains(type);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ListTile(
+                  title: Text(type.name),
+                  leading: CircleAvatar(
+                    backgroundColor: Color(int.parse(type.color, radix: 16)),
+                    child: isSelected ? const Icon(Icons.check, color: Colors.white) : null,
+                  ),
+                  trailing: isSelected
+                      ? TextButton(
+                          onPressed: () => _showCharacterCardSelector(type),
+                          child: Text(
+                            controller.selectedCharacterCards[type.id]?.name ?? '选择角色卡片',
+                            style: TextStyle(
+                              color: controller.selectedCharacterCards[type.id] != null
+                                  ? Theme.of(Get.context!).primaryColor
+                                  : Colors.grey,
+                            ),
+                          ),
+                        )
+                      : null,
+                  onTap: () => controller.toggleCharacterType(type),
+                ),
+                if (isSelected && controller.selectedCharacterCards[type.id] != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
+                    child: Text(
+                      _buildCharacterSummary(controller.selectedCharacterCards[type.id]!),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                const Divider(),
+              ],
+            );
+          }).toList(),
+        )),
+      ],
+    );
+  }
+
+  String _buildCharacterSummary(CharacterCard card) {
+    final parts = <String>[];
+    if (card.gender != null && card.gender!.isNotEmpty) {
+      parts.add(card.gender!);
+    }
+    if (card.age != null && card.age!.isNotEmpty) {
+      parts.add('${card.age}岁');
+    }
+    if (card.personalityTraits != null && card.personalityTraits!.isNotEmpty) {
+      parts.add(card.personalityTraits!);
+    }
+    return parts.join(' · ');
+  }
+
+  void _showCharacterCardSelector(CharacterType type) {
+    final characterCardService = Get.find<CharacterCardService>();
+    
+    Get.dialog(
+      AlertDialog(
+        title: Text('选择${type.name}角色卡片'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Obx(() {
+            final cards = characterCardService.getAllCards();
+            if (cards.isEmpty) {
+              return const Center(
+                child: Text('还没有创建角色卡片'),
+              );
+            }
+            return ListView.builder(
+              shrinkWrap: true,
+              itemCount: cards.length,
+              itemBuilder: (context, index) {
+                final card = cards[index];
+                return ListTile(
+                  title: Text(card.name),
+                  subtitle: Text(_buildCharacterSummary(card)),
+                  onTap: () {
+                    controller.setCharacterCard(type.id, card);
+                    Get.back();
+                  },
+                );
+              },
+            );
+          }),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Get.back();
+              Get.to(() => CharacterCardListScreen());
+            },
+            child: const Text('创建新角色'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGenerationStatus() {
     return GetX<NovelController>(
       builder: (controller) {
@@ -448,6 +554,25 @@ class HomeScreen extends GetView<NovelController> {
                 ),
                 const SizedBox(height: 8),
                 Text(controller.generationStatus.value),
+                const SizedBox(height: 16),
+                Container(
+                  height: 300,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Obx(() => SingleChildScrollView(
+                    reverse: true,
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      controller.realtimeOutput.value,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                    ),
+                  )),
+                ),
               ],
             ),
           ),
@@ -481,5 +606,67 @@ class HomeScreen extends GetView<NovelController> {
         );
       },
     );
+  }
+
+  void _showDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('开始新小说'),
+        content: const Text('这将清除所有已生成的内容和设置，确定要开始新小说吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              controller.startNewNovel();
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TitleInput extends StatefulWidget {
+  @override
+  _TitleInputState createState() => _TitleInputState();
+}
+
+class _TitleInputState extends State<_TitleInput> {
+  late final TextEditingController _titleController;
+  final NovelController _novelController = Get.find<NovelController>();
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: _novelController.title.value);
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      if (_titleController.text != _novelController.title.value) {
+        _titleController.text = _novelController.title.value;
+      }
+      return TextField(
+        controller: _titleController,
+        decoration: const InputDecoration(
+          labelText: '小说标题',
+          hintText: '请输入小说标题',
+        ),
+        onChanged: _novelController.updateTitle,
+      );
+    });
   }
 } 

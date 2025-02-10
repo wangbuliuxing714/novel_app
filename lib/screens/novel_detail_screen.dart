@@ -27,8 +27,17 @@ class NovelDetailScreen extends GetView<NovelDetailController> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(novel.title),
+        title: Text('《${novel.title}》'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_note),
+            tooltip: '续写',
+            onPressed: () => Get.toNamed('/novel_continue', arguments: novel),
+          ),
+          IconButton(
+            icon: const Icon(Icons.share),
+            onPressed: () => _shareNovel(),
+          ),
           Obx(() {
             final isGenerating = controller.isGenerating.value;
             final isPaused = controller.isPaused.value;
@@ -146,6 +155,10 @@ class NovelDetailScreen extends GetView<NovelDetailController> {
         );
       },
     );
+  }
+
+  void _shareNovel() {
+    // Implementation of _shareNovel method
   }
 }
 
