@@ -176,6 +176,22 @@ class SettingsScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 16),
+                        TextField(
+                          decoration: const InputDecoration(
+                            labelText: '每章字数限制',
+                            hintText: '建议设置在4000-8000之间，过短可能导致情节单薄，过长则生成较慢',
+                            border: OutlineInputBorder(),
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) => controller.updateModelConfig(
+                            currentModel.name,
+                            maxTokens: int.tryParse(value) ?? 5000,
+                          ),
+                          controller: TextEditingController(
+                            text: currentModel.maxTokens.toString(),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
                           value: currentModel.apiFormat,
                           decoration: const InputDecoration(
@@ -261,25 +277,65 @@ class SettingsScreen extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 16),
-                            const Text('最大生成长度'),
+                            const Text('重复惩罚 (Repetition Penalty)'),
+                            const Text(
+                              '控制文本重复的程度，值越大越不容易重复\n建议范围：1.0-1.5，默认1.3',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
                             const SizedBox(height: 8),
                             Row(
                               children: [
                                 Expanded(
                                   child: Slider(
-                                    value: controller.maxTokens.value.toDouble(),
-                                    min: 1000,
-                                    max: 8192,
-                                    divisions: 72,
-                                    label: controller.maxTokens.value.toString(),
-                                    onChanged: (value) => controller.updateMaxTokens(value.toInt()),
+                                    value: controller.repetitionPenalty.value,
+                                    min: 1.0,
+                                    max: 2.0,
+                                    divisions: 20,
+                                    label: controller.repetitionPenalty.value.toStringAsFixed(2),
+                                    onChanged: (value) => controller.updateRepetitionPenalty(value),
                                   ),
                                 ),
                                 SizedBox(
-                                  width: 80,
+                                  width: 60,
                                   child: Text(
-                                    controller.maxTokens.value.toString(),
+                                    controller.repetitionPenalty.value.toStringAsFixed(2),
                                     textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            const Text('最大生成长度'),
+                            const Text(
+                              '控制每章生成的最大长度，建议4000-8000之间\n数值越大生成内容越长，但速度也越慢',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Slider(
+                                    value: currentModel.maxTokens.toDouble(),
+                                    min: 2000,
+                                    max: 16384,
+                                    divisions: 144,
+                                    label: '${currentModel.maxTokens} tokens',
+                                    onChanged: (value) {
+                                      final tokens = value.toInt();
+                                      controller.updateMaxTokens(tokens);
+                                      controller.updateModelConfig(
+                                        currentModel.name,
+                                        maxTokens: tokens,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 100,
+                                  child: Text(
+                                    '${currentModel.maxTokens}\ntokens',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(height: 1.2),
                                   ),
                                 ),
                               ],

@@ -15,6 +15,7 @@ class ModelConfig {
   double temperature;
   double topP;
   int maxTokens;
+  double repetitionPenalty; // 添加重复惩罚参数
 
   ModelConfig({
     required this.name,
@@ -28,6 +29,7 @@ class ModelConfig {
     this.temperature = 0.7,
     this.topP = 1.0,
     this.maxTokens = 4000,
+    this.repetitionPenalty = 1.3, // 设置默认值
   });
 
   Map<String, dynamic> toJson() => {
@@ -42,6 +44,7 @@ class ModelConfig {
     'temperature': temperature,
     'topP': topP,
     'maxTokens': maxTokens,
+    'repetitionPenalty': repetitionPenalty, // 添加到 JSON
   };
 
   factory ModelConfig.fromJson(Map<String, dynamic> json) => ModelConfig(
@@ -56,6 +59,7 @@ class ModelConfig {
     temperature: (json['temperature'] as num?)?.toDouble() ?? 0.7,
     topP: (json['topP'] as num?)?.toDouble() ?? 1.0,
     maxTokens: (json['maxTokens'] as num?)?.toInt() ?? 4000,
+    repetitionPenalty: (json['repetitionPenalty'] as num?)?.toDouble() ?? 1.3, // 从 JSON 读取
   );
 
   ModelConfig copyWith({
@@ -70,6 +74,7 @@ class ModelConfig {
     double? temperature,
     double? topP,
     int? maxTokens,
+    double? repetitionPenalty, // 添加到 copyWith
   }) {
     return ModelConfig(
       name: name ?? this.name,
@@ -83,6 +88,7 @@ class ModelConfig {
       temperature: temperature ?? this.temperature,
       topP: topP ?? this.topP,
       maxTokens: maxTokens ?? this.maxTokens,
+      repetitionPenalty: repetitionPenalty ?? this.repetitionPenalty, // 添加到构造
     );
   }
 }
@@ -97,6 +103,7 @@ class ApiConfigController extends GetxController {
   final RxDouble temperature = 0.7.obs;
   final RxDouble topP = 1.0.obs;
   final RxInt maxTokens = 4000.obs;
+  final RxDouble repetitionPenalty = 1.3.obs; // 添加重复惩罚参数的响应式变量
 
   final List<ModelConfig> _defaultModels = [
     ModelConfig(
@@ -161,6 +168,17 @@ class ApiConfigController extends GetxController {
   static const String _ttsApiKeyKey = 'tts_api_key';
   static const String _configModeKey = 'config_mode';
 
+  final Rx<ModelConfig> currentModel = ModelConfig(
+    name: 'default',
+    apiKey: '',
+    apiUrl: '',
+    apiPath: '/v1/chat/completions',
+    model: 'gpt-3.5-turbo',
+    apiFormat: 'openai',
+    maxTokens: 8000,
+    temperature: 0.7,
+  ).obs;
+
   @override
   void onInit() async {
     super.onInit();
@@ -206,6 +224,7 @@ class ApiConfigController extends GetxController {
     temperature.value = config.temperature;
     topP.value = config.topP;
     maxTokens.value = config.maxTokens;
+    repetitionPenalty.value = config.repetitionPenalty; // 更新重复惩罚参数
   }
 
   ModelConfig getCurrentModel() {
@@ -229,6 +248,19 @@ class ApiConfigController extends GetxController {
 
   void updateMaxTokens(int value) {
     maxTokens.value = value;
+    currentModel.update((model) {
+      model?.maxTokens = value;
+    });
+    // 同步更新到models中
+    final index = models.indexWhere((m) => m.name == selectedModelId.value);
+    if (index != -1) {
+      models[index] = models[index].copyWith(maxTokens: value);
+      _box.put(selectedModelId.value, models[index].toJson());
+    }
+  }
+
+  void updateRepetitionPenalty(double value) {
+    repetitionPenalty.value = value;
     _saveCurrentConfig();
   }
 
@@ -256,6 +288,7 @@ class ApiConfigController extends GetxController {
     String? model,
     String? apiFormat,
     String? appId,
+    int? maxTokens,
   }) async {
     final index = models.indexWhere((m) => m.name == modelName);
     if (index != -1) {
@@ -266,8 +299,23 @@ class ApiConfigController extends GetxController {
         model: model,
         apiFormat: apiFormat,
         appId: appId,
+        maxTokens: maxTokens,
       );
       await _box.put(modelName, models[index].toJson());
+      
+      // 如果是当前选中的模型，同步更新currentModel
+      if (modelName == selectedModelId.value) {
+        currentModel.update((model) {
+          if (model != null) {
+            if (maxTokens != null) model.maxTokens = maxTokens;
+            if (apiKey != null) model.apiKey = apiKey;
+            if (apiUrl != null) model.apiUrl = apiUrl;
+            if (apiPath != null) model.apiPath = apiPath;
+            if (apiFormat != null) model.apiFormat = apiFormat;
+            if (appId != null) model.appId = appId;
+          }
+        });
+      }
     }
   }
 
@@ -286,6 +334,7 @@ class ApiConfigController extends GetxController {
         temperature: temperature.value,
         topP: topP.value,
         maxTokens: maxTokens.value,
+        repetitionPenalty: repetitionPenalty.value, // 保存重复惩罚参数
       );
       await _box.put(selectedModelId.value, models[index].toJson());
     }

@@ -25,91 +25,141 @@ class AIService extends GetxService {
   Stream<String> generateTextStream({
     required String systemPrompt,
     required String userPrompt,
-    int maxTokens = 8000,  // 增加默认token限制
-    double temperature = 0.8,
+    double temperature = 0.7,
+    double topP = 1.0,
+    int? maxTokens,
+    double repetitionPenalty = 1.3,
   }) async* {
-    int attempts = 0;
-    DateTime startTime = DateTime.now();
-    
-    print('开始生成文本流');
-    print('运行环境: ${_isWeb ? 'Web' : 'Native'}');
-    
-    while (attempts < _maxRetries) {
-      attempts++;
-      print('尝试第 $attempts/$_maxRetries 次请求');
-      
-      try {
-        final currentModel = _apiConfig.getCurrentModel();
-        print('当前模型: ${currentModel.model}');
-        print('API格式: ${currentModel.apiFormat}');
-        
-        switch (currentModel.apiFormat) {
-          case 'OpenAI API兼容':
-            yield '正在连接 AI 服务...\n';
-            print('使用 OpenAI 兼容API');
-            if (_isWeb) {
-              print('使用Web专用流处理');
-              yield* _streamOpenAIAPIWeb(
-                systemPrompt: systemPrompt,
-                userPrompt: userPrompt,
-                maxTokens: maxTokens,
-                temperature: temperature,
-              );
-            } else {
-              print('使用原生流处理');
-              yield* _streamOpenAIAPI(
-                systemPrompt: systemPrompt,
-                userPrompt: userPrompt,
-                maxTokens: maxTokens,
-                temperature: temperature,
-              );
+    final modelConfig = _apiConfig.getCurrentModel();
+    final apiKey = modelConfig.apiKey;
+    final apiUrl = modelConfig.apiUrl;
+    final apiPath = modelConfig.apiPath;
+    final model = modelConfig.model;
+    final apiFormat = modelConfig.apiFormat;
+    final appId = modelConfig.appId;
+
+    if (apiKey.isEmpty) {
+      throw Exception('API Key not set');
+    }
+
+    final client = http.Client();
+    final uri = Uri.parse('$apiUrl$apiPath');
+
+    try {
+      final Map<String, dynamic> body = apiFormat == 'Google API'
+          ? {
+              'contents': [
+                {
+                  'role': 'user',
+                  'parts': [
+                    {'text': '$systemPrompt\n\n$userPrompt'}
+                  ]
+                }
+              ],
+              'generationConfig': {
+                'temperature': temperature,
+                'topP': topP,
+                'maxOutputTokens': maxTokens,
+                'repetitionPenalty': repetitionPenalty,
+              },
+              'safetySettings': [
+                {
+                  'category': 'HARM_CATEGORY_HARASSMENT',
+                  'threshold': 'BLOCK_NONE'
+                },
+                {
+                  'category': 'HARM_CATEGORY_HATE_SPEECH',
+                  'threshold': 'BLOCK_NONE'
+                },
+                {
+                  'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                  'threshold': 'BLOCK_NONE'
+                },
+                {
+                  'category': 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                  'threshold': 'BLOCK_NONE'
+                }
+              ]
             }
-            print('请求成功！');
-            print('耗时：${DateTime.now().difference(startTime).inSeconds}秒');
-            return;
-          case 'Google API':
-            yield '正在连接 Google AI 服务...\n';
-            print('使用 Google API');
-            if (_isWeb) {
-              print('使用Web专用流处理');
-              yield* _streamGoogleAPIWeb(
-                systemPrompt: systemPrompt,
-                userPrompt: userPrompt,
-                maxTokens: maxTokens,
-                temperature: temperature,
-              );
-            } else {
-              print('使用原生流处理');
-              yield* _streamGoogleAPI(
-                systemPrompt: systemPrompt,
-                userPrompt: userPrompt,
-                maxTokens: maxTokens,
-                temperature: temperature,
-              );
-            }
-            print('请求成功！');
-            print('耗时：${DateTime.now().difference(startTime).inSeconds}秒');
-            return;
-          default:
-            throw Exception('不支持的API格式：${currentModel.apiFormat}');
-        }
-      } catch (e) {
-        print('发生错误：$e');
-        print('错误堆栈：${StackTrace.current}');
-        
-        if (e is TimeoutException) {
-          yield '请求超时，正在重试...\n';
-        } else {
-          yield '发生错误，正在重试：${e.toString()}\n';
-        }
-        
-        if (attempts >= _maxRetries) {
-          yield '达到最大重试次数，请求失败。\n具体错误：${e.toString()}\n请检查：\n1. 网络连接是否正常\n2. API 配置是否正确\n3. API 余额是否充足';
-          rethrow;
-        }
-        await Future.delayed(_retryInterval);
-        continue;
+          : {
+              'messages': [
+                {
+                  'role': 'system',
+                  'content': systemPrompt,
+                },
+                {
+                  'role': 'user',
+                  'content': userPrompt,
+                }
+              ],
+              'model': model,
+              'temperature': temperature,
+              'top_p': topP,
+              'max_tokens': maxTokens,
+              'presence_penalty': 0,
+              'frequency_penalty': repetitionPenalty,
+              'stream': true,
+            };
+
+      Map<String, String> headers = {
+        'Content-Type': 'application/json',
+      };
+
+      if (apiFormat == 'Google API') {
+        headers['x-goog-api-key'] = apiKey;
+      } else if (appId.isNotEmpty) {
+        headers['X-Bce-Authorization'] = apiKey;
+        headers['X-Appid'] = appId;
+      } else {
+        headers['Authorization'] = 'Bearer $apiKey';
       }
+
+      final request = http.Request('POST', uri)
+        ..headers.addAll(headers)
+        ..body = jsonEncode(body);
+
+      final streamedResponse = await client.send(request);
+
+      if (streamedResponse.statusCode != 200) {
+        final errorBody = await streamedResponse.stream.bytesToString();
+        throw Exception('API request failed with status ${streamedResponse.statusCode}: $errorBody');
+      }
+
+      await for (final chunk in streamedResponse.stream.transform(utf8.decoder)) {
+        if (chunk.trim().isEmpty) continue;
+
+        if (apiFormat == 'Google API') {
+          final data = jsonDecode(chunk);
+          if (data['candidates'] != null &&
+              data['candidates'][0]['content'] != null &&
+              data['candidates'][0]['content']['parts'] != null &&
+              data['candidates'][0]['content']['parts'][0]['text'] != null) {
+            yield data['candidates'][0]['content']['parts'][0]['text'];
+          }
+        } else {
+          final lines = chunk.split('\n');
+          for (final line in lines) {
+            if (line.startsWith('data: ')) {
+              final data = line.substring(6);
+              if (data == '[DONE]') continue;
+              
+              try {
+                final json = jsonDecode(data);
+                if (json['choices'] != null &&
+                    json['choices'][0]['delta'] != null &&
+                    json['choices'][0]['delta']['content'] != null) {
+                  yield json['choices'][0]['delta']['content'];
+                }
+              } catch (e) {
+                print('Error parsing JSON: $e');
+                continue;
+              }
+            }
+          }
+        }
+      }
+    } finally {
+      client.close();
     }
   }
 

@@ -11,13 +11,55 @@ import 'package:novel_app/screens/outline_preview_screen.dart';
 import 'package:novel_app/services/cache_service.dart';
 import 'package:novel_app/controllers/novel_controller.dart';
 
+class ParagraphInfo {
+  final String content;
+  final String hash;
+  final List<String> keywords;
+  final DateTime timestamp;
+
+  ParagraphInfo(this.content) :
+    hash = _generateHash(content),
+    keywords = _extractKeywords(content),
+    timestamp = DateTime.now();
+
+  static String _generateHash(String content) {
+    return content.hashCode.toString();
+  }
+
+  static List<String> _extractKeywords(String content) {
+    // 简单的关键词提取：去除常用词，保留主要名词、动词等
+    final words = content.split(RegExp(r'[\s,。，！？.!?]'));
+    final stopWords = {'的', '了', '和', '与', '在', '是', '都', '而', '又', '也', '就'};
+    return words.where((word) => 
+      word.length >= 2 && !stopWords.contains(word)
+    ).toList();
+  }
+}
+
+class DuplicateCheckResult {
+  final bool isDuplicate;
+  final double similarity;
+  final String duplicateSource;
+  final List<String> duplicateKeywords;
+
+  DuplicateCheckResult({
+    required this.isDuplicate,
+    required this.similarity,
+    this.duplicateSource = '',
+    this.duplicateKeywords = const [],
+  });
+}
+
 class NovelGeneratorService extends GetxService {
+  static const double HIGH_SIMILARITY_THRESHOLD = 0.8;
+  static const double MEDIUM_SIMILARITY_THRESHOLD = 0.6;
+  
   final AIService _aiService;
   final ApiConfigController _apiConfig;
   final CacheService _cacheService;
   final void Function(String)? onProgress;
   final String targetReaders = "青年读者";
-  final RxList<String> _generatedParagraphs = <String>[].obs;
+  final RxList<ParagraphInfo> _generatedParagraphs = <ParagraphInfo>[].obs;
   final RxInt _currentGeneratingChapter = 0.obs;
   final RxBool _isGenerating = false.obs;
   final RxString _lastError = ''.obs;
@@ -55,7 +97,7 @@ class NovelGeneratorService extends GetxService {
 
   // 添加新生成的段落到记录中
   void _addGeneratedParagraph(String paragraph) {
-    _generatedParagraphs.add(paragraph);
+    _generatedParagraphs.add(ParagraphInfo(paragraph));
     // 保持最近1000个段落的记录
     if (_generatedParagraphs.length > 1000) {
       _generatedParagraphs.removeAt(0);
@@ -91,6 +133,8 @@ class NovelGeneratorService extends GetxService {
         await for (final chunk in _aiService.generateTextStream(
           systemPrompt: systemPrompt,
           userPrompt: outlinePrompt,
+          maxTokens: _getMaxTokensForChapter(0),
+          temperature: 0.7,
         )) {
           outlineContent += chunk;
           if (onContent != null) {
@@ -185,9 +229,15 @@ class NovelGeneratorService extends GetxService {
     return 0.85;  // 提高结尾阶段的创造性
   }
 
-  int _getMaxTokensForChapter(int number) {
-    // 增加 token 限制到 8000，约等于 6000-7000 字
-    return 8000;
+  int _getMaxTokensForChapter(int chapterNumber) {
+    final apiConfig = Get.find<ApiConfigController>();
+    final model = apiConfig.getCurrentModel();
+    // 大纲生成使用较小的token限制
+    if (chapterNumber == 0) {
+      return 2000;  // 大纲生成使用固定值
+    }
+    // 章节生成使用设置的token限制
+    return model.maxTokens;
   }
 
   String _getChapterStyle(int number, int totalChapters) {
@@ -718,29 +768,53 @@ $structureContent''';
     
     // 分行处理
     final lines = content.split('\n');
-    final cleanedLines = lines.where((line) {
+    final cleanedLines = <String>[];
+    var lastLineWasEmpty = true; // 跟踪上一行是否为空
+    
+    for (var line in lines) {
       final trimmedLine = line.trim();
-      // 过滤掉空行
-      if (trimmedLine.isEmpty) return false;
       
-      // 过滤掉以标记开头的行
+      // 跳过需要过滤的标记行
+      bool shouldSkip = false;
       for (final marker in markersToRemove) {
         if (trimmedLine.startsWith(marker) || 
             trimmedLine.startsWith('- $marker') ||
             trimmedLine == '-') {
-          return false;
+          shouldSkip = true;
+          break;
         }
       }
       
-      // 过滤掉纯数字编号的行
+      // 跳过纯数字编号的行
       if (RegExp(r'^\d+\.$').hasMatch(trimmedLine)) {
-        return false;
+        shouldSkip = true;
       }
       
-      return true;
-    }).toList();
-
-    // 合并处理后的内容
+      if (shouldSkip) continue;
+      
+      // 处理空行
+      if (trimmedLine.isEmpty) {
+        if (!lastLineWasEmpty) {
+          cleanedLines.add('');
+          lastLineWasEmpty = true;
+        }
+        continue;
+      }
+      
+      // 添加非空行
+      cleanedLines.add(trimmedLine);
+      lastLineWasEmpty = false;
+    }
+    
+    // 确保文本不以空行开始或结束
+    while (cleanedLines.isNotEmpty && cleanedLines.first.isEmpty) {
+      cleanedLines.removeAt(0);
+    }
+    while (cleanedLines.isNotEmpty && cleanedLines.last.isEmpty) {
+      cleanedLines.removeLast();
+    }
+    
+    // 合并处理后的内容，确保段落之间有一个空行
     return cleanedLines.join('\n');
   }
 
@@ -790,10 +864,17 @@ ${ChapterGeneration.getChapterPrompt(
 详细的章节规划和上下文信息：
 $chapterContext
 
-请严格按照章节规划来创作本章内容，确保与前文保持连贯性，并为后续章节做好铺垫。
-注意：直接写正文内容，不要包含任何大纲标记或标题。''';
+创作要求：
+1. 严格按照章节规划来创作本章内容
+2. 确保与前文保持连贯性，并为后续章节做好铺垫
+3. 直接写正文内容，不要包含任何大纲标记或标题
+4. 字数要求：本章内容必须在3000-4000字之间，不能过短或过长
+
+
+注意：请确保生成的内容长度在要求范围内，这一点很重要。''';
 
       final buffer = StringBuffer();
+      String currentParagraph = '';
       
       await for (final chunk in _aiService.generateTextStream(
         systemPrompt: systemPrompt,
@@ -802,71 +883,176 @@ $chapterContext
         temperature: _getTemperatureForChapter(chapterNumber, totalChapters),
       )) {
         final cleanedChunk = ChapterGeneration.formatChapter(chunk);
-        buffer.write(cleanedChunk);
-        if (onContent != null) {
-          onContent(cleanedChunk);
+        currentParagraph += cleanedChunk;
+        
+        // 当遇到段落结束标志时
+        if (cleanedChunk.contains('\n\n')) {
+          // 处理当前段落
+          final processedParagraph = await _handleParagraphGeneration(
+            currentParagraph,
+            title: title,
+            chapterNumber: chapterNumber,
+            outline: outline,
+            context: {
+              'currentContext': buffer.toString(),
+              'chapterTheme': theme,
+              'style': style,
+            },
+          );
+          
+          buffer.write(processedParagraph);
+          currentParagraph = '';
+          
+          if (onContent != null) {
+            onContent(processedParagraph);
+          }
         }
       }
 
-      // 清理生成的内容
-      final content = _cleanGeneratedContent(buffer.toString());
-      
-      return content;
+      // 处理最后一个段落（如果有）
+      if (currentParagraph.isNotEmpty) {
+        final processedParagraph = await _handleParagraphGeneration(
+          currentParagraph,
+          title: title,
+          chapterNumber: chapterNumber,
+          outline: outline,
+          context: {
+            'currentContext': buffer.toString(),
+            'chapterTheme': theme,
+            'style': style,
+          },
+        );
+        
+        buffer.write(processedParagraph);
+        if (onContent != null) {
+          onContent(processedParagraph);
+        }
+      }
+
+      return buffer.toString();
     } catch (e) {
       print('生成章节失败: $e');
       rethrow;
     }
   }
 
-  Future<String> _generateWithAI(String prompt) async {
+  Future<String> _handleParagraphGeneration(String paragraph, {
+    required String title,
+    required int chapterNumber,
+    required String outline,
+    required Map<String, dynamic> context,
+  }) async {
+    // 1. 检查重复度
+    final checkResult = _checkParagraphDuplicate(paragraph);
+    
+    // 2. 根据重复度采取不同策略
+    if (checkResult.isDuplicate) {
+      if (checkResult.similarity >= HIGH_SIMILARITY_THRESHOLD) {
+        // 高重复度：完全重新生成
+        return await _regenerateParagraph(
+          title: title,
+          chapterNumber: chapterNumber,
+          outline: outline,
+          context: context,
+          avoidKeywords: checkResult.duplicateKeywords,
+        );
+      } else if (checkResult.similarity >= MEDIUM_SIMILARITY_THRESHOLD) {
+        // 中等重复度：修改现有内容
+        return await _modifyParagraph(
+          paragraph,
+          checkResult.duplicateKeywords,
+          context: context,
+        );
+      }
+    }
+
+    // 重复度低或无重复：保存并返回原段落
+    _addGeneratedParagraph(paragraph);
+    return paragraph;
+  }
+
+  Future<String> _regenerateParagraph({
+    required String title,
+    required int chapterNumber,
+    required String outline,
+    required Map<String, dynamic> context,
+    required List<String> avoidKeywords,
+  }) async {
+    final regeneratePrompt = '''
+请重新生成一段内容，要求：
+1. 避免使用以下关键词或相似表达：${avoidKeywords.join(', ')}
+2. 保持与上下文的连贯性
+3. 使用不同的表达方式和描写角度
+4. 确保内容符合当前章节主题
+
+当前上下文：
+${context['currentContext']}
+
+章节主题：
+${context['chapterTheme']}
+''';
+
+    String newContent = await _generateWithAI(
+      regeneratePrompt,
+      temperature: 0.9,
+      repetitionPenalty: 1.5,
+    );
+
+    return newContent;
+  }
+
+  Future<String> _modifyParagraph(
+    String paragraph,
+    List<String> duplicateKeywords,
+    {required Map<String, dynamic> context}
+  ) async {
+    final modifyPrompt = '''
+请修改以下段落，要求：
+1. 保持主要情节不变
+2. 使用不同的表达方式
+3. 避免使用这些词语：${duplicateKeywords.join(', ')}
+4. 改变描写视角或细节
+
+原段落：
+$paragraph
+
+修改要求：
+1. 更换重复的描写方式
+2. 增加新的细节
+3. 调整句子结构
+''';
+
+    String modifiedContent = await _generateWithAI(
+      modifyPrompt,
+      temperature: 0.8,
+      repetitionPenalty: 1.4,
+    );
+
+    return modifiedContent;
+  }
+
+  // 修改 _generateWithAI 方法以支持更多参数
+  Future<String> _generateWithAI(
+    String prompt, {
+    double temperature = 0.7,
+    double repetitionPenalty = 1.3,
+  }) async {
     try {
       String response = '';
       await for (final chunk in _aiService.generateTextStream(
-        systemPrompt: '''作为一个专业的小说创作助手，请遵循以下创作原则：
-
-1. 故事逻辑：
-   - 确保因果关系清晰合理，事件发展有其必然性
-   - 人物行为要符合其性格特征和处境
-   - 情节转折要有铺垫，避免突兀
-   - 矛盾冲突的解决要符合逻辑
-   - 故事背景要前后一致，细节要互相呼应
-
-2. 叙事结构：
-   - 采用灵活多变的叙事手法，避免单一直线式发展
-   - 合理安排伏笔和悬念，让故事更有层次感
-   - 注意时间线的合理性，避免前后矛盾
-   - 场景转换要流畅自然，不生硬突兀
-   - 故事节奏要有张弛，紧凑处突出戏剧性
-
-3. 人物塑造：
-   - 赋予角色丰富的心理活动和独特性格
-   - 人物成长要符合其经历和环境
-   - 人物关系要复杂立体，互动要自然
-   - 对话要体现人物性格和身份特点
-   - 避免脸谱化和类型化的人物描写
-
-4. 环境描写：
-   - 场景描写要与情节和人物情感相呼应
-   - 细节要生动传神，突出关键特征
-   - 环境氛围要配合故事发展
-   - 感官描写要丰富多样
-   - 避免无关的环境描写，保持紧凑
-
-5. 语言表达：
-   - 用词准确生动，避免重复和陈词滥调
-   - 句式灵活多样，富有韵律感
-   - 善用修辞手法，但不过分堆砌
-   - 对话要自然流畅，符合说话人特点
-   - 描写要细腻传神，避免空洞
-
-请基于以上要求，创作出逻辑严密、情节生动、人物丰满的精彩内容。''',
+        systemPrompt: MasterPrompts.basicPrinciples,
         userPrompt: prompt,
+        temperature: temperature,
+        repetitionPenalty: repetitionPenalty,
+        maxTokens: _apiConfig.getCurrentModel().maxTokens,
+        topP: _apiConfig.getCurrentModel().topP,
       )) {
         response += chunk;
       }
       return response;
     } catch (e) {
-      return '生成失败: $e';
+      print('生成失败: $e');
+      rethrow;
     }
   }
 
@@ -907,5 +1093,49 @@ $chapterContext
     _currentGeneratingChapter.value = 0;
     _isGenerating.value = false;
     _lastError.value = '';
+  }
+
+  double _calculateSimilarity(String text1, String text2) {
+    if (text1.isEmpty || text2.isEmpty) return 0.0;
+    
+    // 将文本转换为字符集合
+    final set1 = text1.split('').toSet();
+    final set2 = text2.split('').toSet();
+    
+    // 计算Jaccard相似度
+    final intersection = set1.intersection(set2).length;
+    final union = set1.union(set2).length;
+    
+    return intersection / union;
+  }
+
+  DuplicateCheckResult _checkParagraphDuplicate(String paragraph) {
+    if (_generatedParagraphs.isEmpty) {
+      return DuplicateCheckResult(isDuplicate: false, similarity: 0.0);
+    }
+
+    double maxSimilarity = 0.0;
+    String mostSimilarParagraph = '';
+    List<String> duplicateKeywords = [];
+
+    for (var existingParagraph in _generatedParagraphs) {
+      final similarity = _calculateSimilarity(
+        paragraph,
+        existingParagraph.content
+      );
+
+      if (similarity > maxSimilarity) {
+        maxSimilarity = similarity;
+        mostSimilarParagraph = existingParagraph.content;
+        duplicateKeywords = existingParagraph.keywords;
+      }
+    }
+
+    return DuplicateCheckResult(
+      isDuplicate: maxSimilarity >= MEDIUM_SIMILARITY_THRESHOLD,
+      similarity: maxSimilarity,
+      duplicateSource: mostSimilarParagraph,
+      duplicateKeywords: duplicateKeywords,
+    );
   }
 } 
