@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
-import 'export_service_web.dart';
+import 'package:novel_app/models/novel.dart';
+import 'package:novel_app/models/export_platform.dart';
 
 class IOExportPlatform implements ExportPlatform {
   @override
@@ -60,4 +62,7 @@ class IOExportPlatform implements ExportPlatform {
   }
 }
 
-ExportPlatform createExportPlatform() => IOExportPlatform(); 
+ExportPlatform createExportPlatform() {
+  if (kIsWeb) throw UnsupportedError('此实现仅支持原生平台');
+  return IOExportPlatform();
+} 

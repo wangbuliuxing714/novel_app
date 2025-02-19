@@ -243,24 +243,38 @@ class HomeScreen extends GetView<NovelController> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 Builder(
-                  builder: (context) => Obx(() => ElevatedButton.icon(
-                    onPressed: () {
-                      if (controller.isGenerating.value) {
-                        controller.stopGeneration();
+                  builder: (context) => Obx(() {
+                    if (controller.isGenerating.value) {
+                      if (controller.isPaused.value) {
+                        return ElevatedButton.icon(
+                          onPressed: controller.checkAndContinueGeneration,
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text('继续生成'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                        );
                       } else {
-                        controller.startGeneration();
+                        return ElevatedButton.icon(
+                          onPressed: controller.stopGeneration,
+                          icon: const Icon(Icons.pause),
+                          label: const Text('暂停生成'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                        );
                       }
-                    },
-                    icon: Icon(
-                      controller.isGenerating.value ? Icons.pause : Icons.play_arrow,
-                    ),
-                    label: Text(
-                      controller.isGenerating.value ? '暂停生成' : '开始生成',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                  )),
+                    } else {
+                      return ElevatedButton.icon(
+                        onPressed: controller.startGeneration,
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('开始生成'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                      );
+                    }
+                  }),
                 ),
                 Builder(
                   builder: (context) => ElevatedButton.icon(

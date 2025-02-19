@@ -12,7 +12,7 @@ class HelpScreen extends StatelessWidget {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('岱宗文脉 - 使用帮助'),
+        title: const Text('AI小说生成器 - 使用帮助'),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
       ),
@@ -22,7 +22,7 @@ class HelpScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '岱宗文脉 - 承载文学梦想的摇篮',
+              'AI小说生成器 - 承载文学梦想的摇篮',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,

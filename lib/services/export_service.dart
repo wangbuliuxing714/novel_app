@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:meta/meta.dart';
 import 'package:novel_app/models/novel.dart';
+import 'package:novel_app/models/export_platform.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path/path.dart' as path;
@@ -14,7 +14,9 @@ class ExportService {
     'html': '网页文件 (*.html)',
   };
 
-  final ExportPlatform _platform = createExportPlatform();
+  final ExportPlatform _platform;
+
+  ExportService() : _platform = createExportPlatform();
 
   Future<String> exportNovel(Novel novel, String format, {List<Chapter>? selectedChapters}) async {
     try {

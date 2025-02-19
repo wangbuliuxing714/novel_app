@@ -1,4 +1,20 @@
-body: ListView(
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:novel_app/controllers/api_config_controller.dart';
+
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final apiConfigController = Get.find<ApiConfigController>();
+    
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('设置'),
+        centerTitle: true,
+      ),
+      body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(
@@ -93,4 +109,7 @@ body: ListView(
             ),
           ),
         ],
-      ), 
+      ),
+    );
+  }
+} 

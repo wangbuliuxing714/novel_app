@@ -243,7 +243,13 @@ class NovelController extends GetxController {
   }
 
   // 修改生成小说的方法
-  Future<void> generateNovel({bool continueGeneration = false}) async {
+  Future<void> generateNovel({
+    required String title,
+    required String genre,
+    required String theme,
+    required int totalChapters,
+    bool continueGeneration = false,
+  }) async {
     if (title.isEmpty) {
       Get.snackbar('错误', '请输入小说标题');
       return;
@@ -259,36 +265,41 @@ class NovelController extends GetxController {
       return;
     }
 
-    // 设置生成状态
+    if (isGenerating.value && !continueGeneration) return;
+    
     isGenerating.value = true;
-    isPaused.value = false;
-    _shouldStop.value = false;
+    generationStatus.value = '正在生成小说...';
+    if (!continueGeneration) {
+      realtimeOutput.value = '';
+    }
 
     // 构建完整的创作要求
     final theme = '''${getCharacterSettings()}
 故事背景：${background.value}
 其他要求：${otherRequirements.value}''';
 
-    // 如果不是继续生成，重置所有进度
-    if (!continueGeneration) {
-      _currentChapter.value = 0;
-      _hasOutline.value = false;
-      generationProgress.value = 0;
-      _clearRealtimeOutput();
-    }
-
     try {
-      final novel = await _novelGenerator.generateNovel(
-        title: title.value,
-        genre: selectedGenres.join('、'),
+      // 创建或获取现有小说对象
+      var novel = novels.firstWhere(
+        (n) => n.title == title,
+        orElse: () => Novel(
+          title: title,
+          genre: genre,
+          outline: '',
+          content: '',
+          chapters: [],
+          createdAt: DateTime.now(),
+        ),
+      );
+
+      await _novelGenerator.generateNovel(
+        title: title,
+        genre: genre,
         theme: theme,
-        targetReaders: '青年读者',
-        totalChapters: totalChapters.value,
+        targetReaders: '爱看网文的年轻人',
+        totalChapters: totalChapters,
         continueGeneration: continueGeneration,
-        onProgress: (status) {
-          if (_shouldStop.value) {
-            throw '生成已暂停';
-          }
+        onProgress: (status) async {
           generationStatus.value = status;
           _updateRealtimeOutput('\n$status\n');
           
@@ -302,54 +313,61 @@ class NovelController extends GetxController {
                 0;
             _currentChapter.value = currentChapter;
             generationProgress.value =
-                0.2 + 0.8 * (currentChapter / totalChapters.value);
+                0.2 + 0.8 * (currentChapter / totalChapters);
           }
         },
         onContent: (content) {
-          if (_shouldStop.value) {
-            throw '生成已暂停';
-          }
           _updateRealtimeOutput(content);
+        },
+        onChapterComplete: (chapterNumber, chapterTitle, chapterContent) async {
+          // 每章完成时立即保存
+          final chapter = Chapter(
+            number: chapterNumber,
+            title: chapterTitle,
+            content: chapterContent,
+          );
+          
+          // 保存章节
+          await saveChapter(title, chapter);
+          
+          // 更新进度提示
+          Get.snackbar(
+            '保存成功', 
+            '第$chapterNumber章已保存到书库',
+            duration: const Duration(seconds: 1),
+          );
         },
       );
 
-      if (!_shouldStop.value) {
-        // 保存大纲为第0章
-        if (novel.outline.isNotEmpty) {
-          final outlineChapter = Chapter(
-            number: 0,
-            title: '大纲',
-            content: novel.outline,
-          );
-          addChapter(outlineChapter);
-        }
-        
-        // 保存小说到本地存储
-        await _saveToHive(novel);
-        novels.insert(0, novel);
-        
+      // 只有在非暂停状态且当前章节等于总章节数时才显示完成
+      if (!isPaused.value && _currentChapter.value >= totalChapters) {
         Get.snackbar('成功', '小说生成完成');
         // 生成完成后重置状态
-        _currentChapter.value = 0;
-        _hasOutline.value = false;
-        isGenerating.value = false;
-        isPaused.value = false;
-        _shouldStop.value = false;
+        _resetGenerationState();
+        // 清除生成进度
+        await _novelGenerator.clearGenerationProgress();
       }
     } catch (e) {
       if (e.toString() == '生成已暂停') {
-        // 暂停时不显示错误信息，但要保持生成状态
-        isGenerating.value = true;
-        isPaused.value = true;
+        // 暂停不是错误，不需要显示错误信息
         return;
       }
       _updateRealtimeOutput('\n生成失败：$e\n');
       Get.snackbar('错误', '生成失败：$e');
       // 发生错误时重置状态
-      isGenerating.value = false;
-      isPaused.value = false;
-      _shouldStop.value = false;
+      _resetGenerationState();
+    } finally {
+      if (!isPaused.value) {
+        isGenerating.value = false;
+      }
     }
+  }
+
+  // 修改重置生成状态的方法
+  void _resetGenerationState() {
+    isGenerating.value = false;
+    isPaused.value = false;
+    generationStatus.value = '';
   }
 
   void addChapter(Chapter chapter) {
@@ -510,25 +528,10 @@ class NovelController extends GetxController {
 
   // 修改开始生成的方法
   void startGeneration() {
-    if (title.isEmpty) {
-      Get.snackbar('错误', '请输入小说标题');
-      return;
-    }
-
-    if (selectedGenres.isEmpty) {
-      Get.snackbar('错误', '请选择至少一个小说类型');
-      return;
-    }
-
-    if (selectedCharacterTypes.isEmpty || selectedCharacterCards.isEmpty) {
-      Get.snackbar('错误', '请选择至少一个角色');
-      return;
-    }
-
+    if (isGenerating.value && !isPaused.value) return;
+    
     // 重置所有状态
-    _shouldStop.value = false;
-    isPaused.value = false;
-    isGenerating.value = true;
+    _resetGenerationState();
     _currentChapter.value = 0;
     _hasOutline.value = false;
     generationProgress.value = 0;
@@ -538,46 +541,45 @@ class NovelController extends GetxController {
     clearAllChapters();
     
     // 开始生成
-    generateNovel(continueGeneration: false);
+    generateNovel(
+      title: title.value,
+      genre: selectedGenres.join('、'),
+      theme: getCharacterSettings(),
+      totalChapters: totalChapters.value,
+      continueGeneration: false,
+    );
   }
 
   // 修改检查并继续生成的方法
   Future<void> checkAndContinueGeneration() async {
-    if (title.isEmpty) {
-      Get.snackbar('错误', '请输入小说标题');
-      return;
-    }
-
-    if (selectedGenres.isEmpty) {
-      Get.snackbar('错误', '请选择至少一个小说类型');
-      return;
-    }
-
-    if (selectedCharacterTypes.isEmpty || selectedCharacterCards.isEmpty) {
-      Get.snackbar('错误', '请选择至少一个角色');
-      return;
-    }
-
-    // 重置暂停状态
-    _shouldStop.value = false;
-    isPaused.value = false;
-    isGenerating.value = true;
+    if (!isPaused.value) return;
     
-    // 如果有进度，从当前进度继续
-    if (_currentChapter.value > 0 || _hasOutline.value) {
-      generateNovel(continueGeneration: true);
-    } else {
-      // 没有进度，从头开始
-      startGeneration();
+    try {
+      // 重置暂停状态
+      isPaused.value = false;
+      _novelGenerator.resumeGeneration();
+      
+      // 从当前进度继续生成
+      _updateRealtimeOutput('\n继续生成，从第${_currentChapter.value}章开始...\n');
+      await generateNovel(
+        title: title.value,
+        genre: selectedGenres.join('、'),
+        theme: getCharacterSettings(),
+        totalChapters: totalChapters.value,
+        continueGeneration: true,  // 设置为继续生成模式
+      );
+    } catch (e) {
+      Get.snackbar('错误', '继续生成失败：$e');
+      _resetGenerationState();
     }
   }
 
   // 修改暂停生成的方法
   void stopGeneration() {
-    _shouldStop.value = true;
+    if (!isGenerating.value) return;
     isPaused.value = true;
-    // 保持 isGenerating 为 true，因为只是暂停
-    _updateRealtimeOutput('\n已暂停生成，当前进度：${_currentChapter.value}章\n');
+    _novelGenerator.pauseGeneration();
+    _updateRealtimeOutput('\n已暂停生成，当前进度：第${_currentChapter.value}章\n');
   }
 
   // 开始新小说

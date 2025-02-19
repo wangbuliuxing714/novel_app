@@ -10,6 +10,9 @@ import 'package:novel_app/controllers/api_config_controller.dart';
 import 'package:novel_app/screens/outline_preview_screen.dart';
 import 'package:novel_app/services/cache_service.dart';
 import 'package:novel_app/controllers/novel_controller.dart';
+import 'dart:convert';
+import 'dart:async';
+import 'package:hive/hive.dart';
 
 class ParagraphInfo {
   final String content;
@@ -63,6 +66,11 @@ class NovelGeneratorService extends GetxService {
   final RxInt _currentGeneratingChapter = 0.obs;
   final RxBool _isGenerating = false.obs;
   final RxString _lastError = ''.obs;
+  final RxString _currentNovelTitle = ''.obs;
+  final RxString _currentNovelOutline = ''.obs;
+  final RxList<Chapter> _generatedChapters = <Chapter>[].obs;
+  final RxBool _isPaused = false.obs;
+  Completer<void>? _pauseCompleter;
 
   NovelGeneratorService(
     this._aiService, 
@@ -74,7 +82,11 @@ class NovelGeneratorService extends GetxService {
   // 获取当前生成状态的getter
   int get currentGeneratingChapter => _currentGeneratingChapter.value;
   bool get isGenerating => _isGenerating.value;
+  bool get isPaused => _isPaused.value;  // 添加暂停状态getter
   String get lastError => _lastError.value;
+  List<Chapter> get generatedChapters => _generatedChapters;
+  String get currentNovelTitle => _currentNovelTitle.value;
+  String get currentNovelOutline => _currentNovelOutline.value;
 
   void _updateProgress(String message) {
     onProgress?.call(message);
@@ -503,14 +515,40 @@ class NovelGeneratorService extends GetxService {
     bool continueGeneration = false,
     void Function(String)? onProgress,
     void Function(String)? onContent,
+    void Function(int, String, String)? onChapterComplete,
   }) async {
     try {
+      _isGenerating.value = true;
+      _currentNovelTitle.value = title;
+      
+      // 检查是否继续生成
+      if (continueGeneration) {
+        final progress = await _getLastGenerationProgress(title);
+        if (progress != null) {
+          return await this.continueGeneration(
+            title: title,
+            genre: genre,
+            theme: theme,
+            targetReaders: targetReaders,
+            totalChapters: totalChapters,
+            onProgress: onProgress,
+            onContent: onContent,
+          );
+        }
+      }
+
       onProgress?.call('正在生成大纲...');
       
       // 第一步：生成整体架构
       onProgress?.call('正在设计故事整体架构...');
       final systemPrompt = OutlineGeneration.getSystemPrompt(title, genre, theme);
       final outlinePrompt = OutlineGeneration.getOutlinePrompt(title, genre, theme, totalChapters);
+
+      // 在每个生成步骤前检查暂停状态
+      await _checkPause();
+      if (_isPaused.value) {
+        throw Exception('生成已暂停');
+      }
 
       String structureContent = '';
       await for (final chunk in _aiService.generateTextStream(
@@ -519,6 +557,10 @@ class NovelGeneratorService extends GetxService {
         maxTokens: 2000,
         temperature: 0.7,
       )) {
+        await _checkPause();  // 检查是否需要暂停
+        if (_isPaused.value) {
+          throw Exception('生成已暂停');
+        }
         structureContent += chunk;
         if (onContent != null) {
           onContent(chunk);
@@ -538,6 +580,21 @@ class NovelGeneratorService extends GetxService {
       fullOutline.write('\n\n三、具体章节\n');
       
       for (int start = 1; start <= totalChapters; start += batchSize) {
+        await _checkPause();
+        if (_isPaused.value) {
+          // 保存当前进度
+          await _saveGenerationProgress(
+            title: title,
+            genre: genre,
+            theme: theme,
+            targetReaders: targetReaders,
+            totalChapters: totalChapters,
+            outline: fullOutline.toString(),
+            chapters: [],
+          );
+          throw Exception('生成已暂停');
+        }
+
         final end = (start + batchSize - 1).clamp(1, totalChapters);
         
         final detailPrompt = '''基于上述整体架构，请为第$start章到第$end章创作详细内容：
@@ -563,6 +620,20 @@ $structureContent''';
           maxTokens: 2000,
           temperature: 0.7,
         )) {
+          await _checkPause();
+          if (_isPaused.value) {
+            // 保存当前进度
+            await _saveGenerationProgress(
+              title: title,
+              genre: genre,
+              theme: theme,
+              targetReaders: targetReaders,
+              totalChapters: totalChapters,
+              outline: fullOutline.toString(),
+              chapters: [],
+            );
+            throw Exception('生成已暂停');
+          }
           outlineContent += chunk;
           if (onContent != null) {
             onContent(chunk);
@@ -595,6 +666,21 @@ $structureContent''';
       // 开始生成章节
       final List<Chapter> chapters = [];
       for (int i = 1; i <= totalChapters; i++) {
+        await _checkPause();
+        if (_isPaused.value) {
+          // 保存当前进度
+          await _saveGenerationProgress(
+            title: title,
+            genre: genre,
+            theme: theme,
+            targetReaders: targetReaders,
+            totalChapters: totalChapters,
+            outline: outline,
+            chapters: chapters,
+          );
+          throw Exception('生成已暂停');
+        }
+
         onProgress?.call('正在生成第 $i 章...');
         
         final chapter = await generateChapter(
@@ -610,6 +696,9 @@ $structureContent''';
         );
         
         chapters.add(chapter);
+
+        // 调用章节完成回调
+        onChapterComplete?.call(i, '第$i章', chapter.content);
       }
 
       // 更新小说对象，包含所有章节
@@ -622,8 +711,18 @@ $structureContent''';
         createdAt: DateTime.now(),
       );
     } catch (e) {
+      if (e.toString() == '生成已暂停') {
+        rethrow;  // 重新抛出暂停异常
+      }
+      _isGenerating.value = false;
+      _isPaused.value = false;
+      _lastError.value = e.toString();
       print('生成小说失败: $e');
       rethrow;
+    } finally {
+      if (!_isPaused.value) {
+        _isGenerating.value = false;
+      }
     }
   }
 
@@ -1056,43 +1155,148 @@ $paragraph
     }
   }
 
-  // 保存生成进度
-  Future<void> _saveGenerationProgress(String title, int chapter) async {
-    await _cacheService.cacheContent('${title}_generation_progress', chapter.toString());
-  }
-  
-  // 获取上次生成进度
-  Future<int> _getLastGenerationProgress(String title) async {
-    final progress = await _cacheService.getContent('${title}_generation_progress');
-    return progress != null ? int.tryParse(progress) ?? 0 : 0;
+  // 添加保存生成进度的方法
+  Future<void> _saveGenerationProgress({
+    required String title,
+    required String genre,
+    required String theme,
+    required String targetReaders,
+    required int totalChapters,
+    required String outline,
+    required List<Chapter> chapters,
+  }) async {
+    final box = await Hive.openBox('generation_progress');
+    await box.put('last_generation', {
+      'title': title,
+      'genre': genre,
+      'theme': theme,
+      'target_readers': targetReaders,
+      'total_chapters': totalChapters,
+      'outline': outline,
+      'chapters': chapters.map((c) => c.toJson()).toList(),
+      'timestamp': DateTime.now().toIso8601String(),
+    });
   }
 
-  // 添加一个方法来检查是否可以继续生成
-  Future<bool> canContinueGeneration(String title) async {
+  // 添加获取上次生成进度的方法
+  Future<Map<String, dynamic>?> _getLastGenerationProgress(String title) async {
+    final box = await Hive.openBox('generation_progress');
+    final progress = box.get('last_generation');
+    if (progress != null && progress['title'] == title) {
+      return Map<String, dynamic>.from(progress);
+    }
+    return null;
+  }
+
+  // 添加清除生成进度的方法
+  Future<void> clearGenerationProgress() async {
+    final box = await Hive.openBox('generation_progress');
+    await box.delete('last_generation');
+  }
+
+  // 添加继续生成的方法
+  Future<Novel> continueGeneration({
+    required String title,
+    required String genre,
+    required String theme,
+    required String targetReaders,
+    required int totalChapters,
+    void Function(String)? onProgress,
+    void Function(String)? onContent,
+  }) async {
     final progress = await _getLastGenerationProgress(title);
-    final outline = await _checkCache('outline_$title');
-    return progress > 0 && outline != null;
+    if (progress == null) {
+      throw Exception('未找到上次的生成进度');
+    }
+
+    final outline = progress['outline'] as String;
+    final savedChapters = (progress['chapters'] as List)
+        .map((c) => Chapter.fromJson(Map<String, dynamic>.from(c)))
+        .toList();
+
+    onProgress?.call('正在从上次的进度继续生成...');
+    onContent?.call('已恢复大纲和${savedChapters.length}个章节\n\n');
+
+    // 从上次的进度继续生成
+    final novel = Novel(
+      title: title,
+      genre: genre,
+      outline: outline,
+      content: '',
+      chapters: savedChapters,
+      createdAt: DateTime.now(),
+    );
+
+    // 继续生成剩余的章节
+    for (var i = savedChapters.length + 1; i <= totalChapters; i++) {
+      await _checkPause();
+      onProgress?.call('正在生成第$i章...');
+      
+      final chapterContent = await _generateChapter(
+        title: title,
+        genre: genre,
+        theme: theme,
+        outline: outline,
+        chapterNumber: i,
+        totalChapters: totalChapters,
+        previousChapters: savedChapters,
+        onContent: onContent,
+      );
+
+      final chapter = Chapter(
+        number: i,
+        title: '第$i章',
+        content: chapterContent,
+      );
+      
+      novel.chapters.add(chapter);
+      
+      // 保存当前进度
+      await _saveGenerationProgress(
+        title: title,
+        genre: genre,
+        theme: theme,
+        targetReaders: targetReaders,
+        totalChapters: totalChapters,
+        outline: outline,
+        chapters: novel.chapters,
+      );
+    }
+
+    // 生成完成后清除进度
+    await clearGenerationProgress();
+    return novel;
   }
 
-  // 添加一个方法来获取生成进度信息
-  Future<Map<String, dynamic>> getGenerationProgress(String title) async {
-    final progress = await _getLastGenerationProgress(title);
-    final outline = await _checkCache('outline_$title');
-    return {
-      'currentChapter': progress,
-      'hasOutline': outline != null,
-      'lastError': _lastError.value,
-      'isGenerating': _isGenerating.value,
-    };
+  // 暂停生成
+  void pauseGeneration() {
+    if (!_isPaused.value) {
+      _isPaused.value = true;
+      if (_pauseCompleter == null || _pauseCompleter!.isCompleted) {
+        _pauseCompleter = Completer<void>();
+      }
+    }
   }
 
-  // 添加一个方法来清除生成进度
-  Future<void> clearGenerationProgress(String title) async {
-    await _cacheService.removeContent('${title}_generation_progress');
-    await _cacheService.removeContent('outline_$title');
-    _currentGeneratingChapter.value = 0;
-    _isGenerating.value = false;
-    _lastError.value = '';
+  // 继续生成
+  void resumeGeneration() {
+    if (_isPaused.value) {
+      _isPaused.value = false;
+      if (_pauseCompleter != null && !_pauseCompleter!.isCompleted) {
+        _pauseCompleter!.complete();
+      }
+      _pauseCompleter = null;
+    }
+  }
+
+  // 检查是否需要暂停
+  Future<void> _checkPause() async {
+    if (_isPaused.value) {
+      if (_pauseCompleter == null || _pauseCompleter!.isCompleted) {
+        _pauseCompleter = Completer<void>();
+      }
+      await _pauseCompleter!.future;
+    }
   }
 
   double _calculateSimilarity(String text1, String text2) {
@@ -1137,5 +1341,41 @@ $paragraph
       duplicateSource: mostSimilarParagraph,
       duplicateKeywords: duplicateKeywords,
     );
+  }
+
+  Future<String> _generateChapter({
+    required String title,
+    required String genre,
+    required String theme,
+    required String outline,
+    required int chapterNumber,
+    required int totalChapters,
+    required List<Chapter> previousChapters,
+    void Function(String)? onContent,
+  }) async {
+    try {
+      // 将之前的章节转换为字符串列表
+      final previousChapterContents = previousChapters
+          .map((chapter) => chapter.content)
+          .toList();
+
+      final chapterContent = await _generateChapterContent(
+        title: title,
+        chapterNumber: chapterNumber,
+        outline: outline,
+        previousChapters: previousChapterContents,
+        totalChapters: totalChapters,
+        genre: genre,
+        theme: theme,
+        style: _determineStyle(chapterNumber, totalChapters),
+        onProgress: null,
+        onContent: onContent,
+      );
+
+      return chapterContent;
+    } catch (e) {
+      print('生成章节失败: $e');
+      rethrow;
+    }
   }
 } 

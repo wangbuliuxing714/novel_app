@@ -36,15 +36,15 @@ dev_dependencies:
   flutter_lints: ^2.0.0
   hive_generator: ^1.1.3
   build_runner: ^2.1.11
+  analyzer: ^4.7.0
 
 flutter:
   uses-material-design: true
 
-# 添加Windows平台配置
 msix_config:
-  display_name: 岱宗文脉
-  publisher_display_name: Your Company Name
-  identity_name: com.yourcompany.novelapp
-  msix_version: 1.0.0.0
-  logo_path: assets/logo.png
-  capabilities: internetClient, musicLibrary, documentsLibrary
+  display_name: "岱宗文脉"
+  publisher_display_name: "Your Company Name"
+  identity_name: "com.yourcompany.novelapp"
+  msix_version: "1.0.0.0"
+  logo_path: "assets/logo.png"
+  capabilities: "internetClient, musicLibrary, documentsLibrary"

@@ -1,19 +1,14 @@
-import 'dart:html' as html;
-import 'package:novel_app/models/novel.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:novel_app/models/novel.dart';
 
-abstract class ExportPlatform {
-  Future<String> exportContent(String content, String format, String? title);
-  Future<String> exportEpub(List<Chapter> chapters, String? title);
-}
-
-ExportPlatform createExportPlatform() => WebExportPlatform();
-
-class WebExportPlatform implements ExportPlatform {
-  @override
+class WebExportPlatform {
   Future<String> exportContent(String content, String format, String? title) async {
+    if (!kIsWeb) {
+      throw UnsupportedError('此方法仅支持Web平台');
+    }
+
     try {
-      // 处理文件名，移除可能的非法字符
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final safeTitle = (title ?? '小说').replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
       final fileName = '${safeTitle}_$timestamp.$format';
@@ -26,7 +21,8 @@ class WebExportPlatform implements ExportPlatform {
         processedContent = _generateMarkdown(title ?? '小说', content);
       }
 
-      return await _downloadFile(processedContent, fileName, format);
+      // 返回下载链接
+      return 'data:${_getMimeType(format)},${Uri.encodeComponent(processedContent)}';
     } catch (e) {
       print('导出失败: $e');
       return '导出失败：$e';
@@ -106,8 +102,11 @@ ${content.split('\n').map((p) => p.trim().isEmpty ? '' : p).join('\n\n')}
         .replaceAll("'", '&#039;');
   }
 
-  @override
   Future<String> exportEpub(List<Chapter> chapters, String? title) async {
+    if (!kIsWeb) {
+      throw UnsupportedError('此方法仅支持Web平台');
+    }
+
     try {
       final buffer = StringBuffer();
       final safeTitle = (title ?? '小说').replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
@@ -128,45 +127,11 @@ ${content.split('\n').map((p) => p.trim().isEmpty ? '' : p).join('\n\n')}
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final fileName = '${safeTitle}_$timestamp.txt';
       
-      return await _downloadFile(buffer.toString(), fileName, 'txt');
+      // 返回下载链接
+      return 'data:text/plain;charset=utf-8,${Uri.encodeComponent(buffer.toString())}';
     } catch (e) {
       print('导出失败: $e');
       return '导出失败：$e';
-    }
-  }
-
-  Future<String> _downloadFile(String content, String fileName, String format) async {
-    try {
-      // 创建 Blob
-      final List<int> bytes = utf8.encode(content);
-      final blob = html.Blob([bytes], _getMimeType(format));
-      
-      // 创建下载链接
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      
-      // 创建一个隐藏的下载链接
-      final anchor = html.AnchorElement()
-        ..href = url
-        ..download = fileName
-        ..style.display = 'none';
-      
-      // 添加到文档并触发点击
-      html.document.body?.children.add(anchor);
-      
-      // 使用 dispatchEvent 来触发点击，这样更可靠
-      anchor.dispatchEvent(html.MouseEvent('click'));
-      
-      // 延迟清理，确保下载已经开始
-      await Future.delayed(const Duration(seconds: 1));
-      
-      // 清理
-      anchor.remove();
-      html.Url.revokeObjectUrl(url);
-      
-      return '文件"$fileName"已开始下载';
-    } catch (e) {
-      print('下载失败: $e');
-      return '下载失败：$e';
     }
   }
 

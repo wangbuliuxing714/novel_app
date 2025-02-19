@@ -17,7 +17,7 @@ class HomeScreen extends StatelessWidget {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('岱宗文脉'),
+        title: const Text('AI小说生成器'),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
@@ -52,7 +52,7 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const Text(
-              '欢迎使用岱宗文脉\n汲取泰山灵气，承载文脉传承',
+              '欢迎使用AI小说生成器\n汲取泰山灵气，承载文脉传承',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
