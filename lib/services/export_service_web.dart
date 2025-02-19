@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:novel_app/models/novel.dart';
+import 'package:novel_app/models/export_platform.dart';
 
-class WebExportPlatform {
+class WebExportPlatform implements ExportPlatform {
   Future<String> exportContent(String content, String format, String? title) async {
     if (!kIsWeb) {
       throw UnsupportedError('此方法仅支持Web平台');
@@ -147,4 +148,7 @@ ${content.split('\n').map((p) => p.trim().isEmpty ? '' : p).join('\n\n')}
         return 'text/plain;charset=utf-8';
     }
   }
-} 
+}
+
+// 导出平台实现
+ExportPlatform get platform => WebExportPlatform(); 

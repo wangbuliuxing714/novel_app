@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/models/export_platform.dart';
@@ -16,7 +17,7 @@ class ExportService {
 
   final ExportPlatform _platform;
 
-  ExportService() : _platform = createExportPlatform();
+  ExportService() : _platform = platform;
 
   Future<String> exportNovel(Novel novel, String format, {List<Chapter>? selectedChapters}) async {
     try {

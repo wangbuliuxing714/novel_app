@@ -7,18 +7,13 @@ import 'package:novel_app/models/export_platform.dart';
 
 class IOExportPlatform implements ExportPlatform {
   @override
-  Future<String> exportContent(String content, String format, String? title) async {
+  Future<String> exportContent(String content, String format, String fileName) async {
     try {
-      final directory = await _getExportDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final safeTitle = (title ?? '小说').replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
-      final fileName = '${safeTitle}_$timestamp.$format';
-      final file = File(path.join(directory.path, fileName));
-      
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File(path.join(directory.path, '$fileName.$format'));
       await file.writeAsString(content);
       return '已导出到：${file.path}';
     } catch (e) {
-      print('导出失败: $e');
       return '导出失败：$e';
     }
   }
@@ -65,4 +60,7 @@ class IOExportPlatform implements ExportPlatform {
 ExportPlatform createExportPlatform() {
   if (kIsWeb) throw UnsupportedError('此实现仅支持原生平台');
   return IOExportPlatform();
-} 
+}
+
+// 导出平台实现
+ExportPlatform get platform => createExportPlatform(); 
