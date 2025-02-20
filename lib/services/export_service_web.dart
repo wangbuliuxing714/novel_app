@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/models/export_platform.dart';
+import 'dart:html' as html;
 
 class WebExportPlatform implements ExportPlatform {
   Future<String> exportContent(String content, String format, String? title) async {
@@ -22,8 +23,24 @@ class WebExportPlatform implements ExportPlatform {
         processedContent = _generateMarkdown(title ?? '小说', content);
       }
 
-      // 返回下载链接
-      return 'data:${_getMimeType(format)},${Uri.encodeComponent(processedContent)}';
+      // 创建Blob URL而不是data URL
+      final blob = html.Blob([processedContent], 'text/${_getMimeType(format)}');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+
+      // 创建下载链接
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..style.display = 'none';
+      html.document.body?.children.add(anchor);
+
+      // 触发下载
+      anchor.click();
+
+      // 清理
+      html.document.body?.children.remove(anchor);
+      html.Url.revokeObjectUrl(url);
+
+      return '导出成功';
     } catch (e) {
       print('导出失败: $e');
       return '导出失败：$e';
@@ -103,6 +120,19 @@ ${content.split('\n').map((p) => p.trim().isEmpty ? '' : p).join('\n\n')}
         .replaceAll("'", '&#039;');
   }
 
+  String _getMimeType(String format) {
+    switch (format.toLowerCase()) {
+      case 'txt':
+        return 'plain';
+      case 'md':
+        return 'markdown';
+      case 'html':
+        return 'html';
+      default:
+        return 'plain';
+    }
+  }
+
   Future<String> exportEpub(List<Chapter> chapters, String? title) async {
     if (!kIsWeb) {
       throw UnsupportedError('此方法仅支持Web平台');
@@ -119,33 +149,33 @@ ${content.split('\n').map((p) => p.trim().isEmpty ? '' : p).join('\n\n')}
       
       // 添加章节内容
       for (var chapter in chapters) {
-        buffer.writeln('\n第${chapter.number}章');
+        buffer.writeln('\n第${chapter.number}章：${chapter.title}');
         buffer.writeln('-' * 30 + '\n');
         buffer.writeln(chapter.content);
         buffer.writeln('\n' + '=' * 50 + '\n');
       }
 
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = '${safeTitle}_$timestamp.txt';
-      
-      // 返回下载链接
-      return 'data:text/plain;charset=utf-8,${Uri.encodeComponent(buffer.toString())}';
+      final content = buffer.toString();
+      final blob = html.Blob([content], 'text/plain;charset=utf-8');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+
+      // 创建下载链接
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', '${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.txt')
+        ..style.display = 'none';
+      html.document.body?.children.add(anchor);
+
+      // 触发下载
+      anchor.click();
+
+      // 清理
+      html.document.body?.children.remove(anchor);
+      html.Url.revokeObjectUrl(url);
+
+      return '导出成功';
     } catch (e) {
       print('导出失败: $e');
       return '导出失败：$e';
-    }
-  }
-
-  String _getMimeType(String format) {
-    switch (format.toLowerCase()) {
-      case 'txt':
-        return 'text/plain;charset=utf-8';
-      case 'md':
-        return 'text/markdown;charset=utf-8';
-      case 'html':
-        return 'text/html;charset=utf-8';
-      default:
-        return 'text/plain;charset=utf-8';
     }
   }
 }

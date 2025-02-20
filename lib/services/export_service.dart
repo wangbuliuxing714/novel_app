@@ -7,6 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path/path.dart' as path;
 import 'export_service_web.dart' if (dart.library.io) 'export_service_io.dart';
+import 'package:intl/intl.dart';
 
 class ExportService {
   static const Map<String, String> supportedFormats = {
@@ -26,31 +27,15 @@ class ExportService {
         return '没有可导出的章节';
       }
 
-      if (kIsWeb) {
-        // Web平台使用特定的导出逻辑
-        if (format == 'pdf') {
-          return '网页版暂不支持PDF导出';
-        }
-        
-        final content = _generateContent(novel, chapters, format);
-        return await _platform.exportContent(content, format, novel.title);
-      } else {
-        // 非Web平台使用原有的导出逻辑
-        final directory = await _getExportDirectory();
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final fileName = '${novel.title}_$timestamp';
+      // 生成内容
+      final content = _generateContent(novel, chapters, format);
 
-        switch (format) {
-          case 'txt':
-            return await _exportToTxt(directory, fileName, novel, chapters);
-          case 'pdf':
-            return await _exportToPdf(directory, fileName, novel, chapters);
-          case 'html':
-            return await _exportToHtml(directory, fileName, novel, chapters);
-          default:
-            return '不支持的导出格式';
-        }
+      // 使用平台特定的导出方法
+      if (format == 'pdf' && kIsWeb) {
+        return '网页版暂不支持PDF导出';
       }
+
+      return await _platform.exportContent(content, format, novel.title);
     } catch (e) {
       return '导出失败：$e';
     }
@@ -59,10 +44,18 @@ class ExportService {
   String _generateContent(Novel novel, List<Chapter> chapters, String format) {
     final buffer = StringBuffer();
     
-    // 添加标题
+    // 添加标题和元信息
     buffer.writeln('《${novel.title}》\n');
-    buffer.writeln('创建时间：${DateTime.now().toString().split('.')[0]}\n');
+    buffer.writeln('作者：AI创作');
+    buffer.writeln('创建时间：${DateFormat('yyyy-MM-dd HH:mm:ss').format(novel.createdAt)}\n');
     buffer.writeln('=' * 50 + '\n');
+    
+    // 添加目录
+    buffer.writeln('目录\n');
+    for (final chapter in chapters) {
+      buffer.writeln('第${chapter.number}章：${chapter.title}');
+    }
+    buffer.writeln('\n' + '=' * 50 + '\n');
     
     // 添加章节内容
     for (final chapter in chapters) {
