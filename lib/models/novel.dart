@@ -8,7 +8,7 @@ class Novel {
   final String id;
   
   @HiveField(1)
-  final String title;
+  String title;
   
   @HiveField(2)
   final String genre;
@@ -38,6 +38,26 @@ class Novel {
     required this.chapters,
     required this.createdAt,
   }) : this.id = id ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+  Novel copyWith({
+    String? title,
+    String? genre,
+    String? outline,
+    String? content,
+    List<Chapter>? chapters,
+    DateTime? createdAt,
+    String? id,
+  }) {
+    return Novel(
+      title: title ?? this.title,
+      genre: genre ?? this.genre,
+      outline: outline ?? this.outline,
+      content: content ?? this.content,
+      chapters: chapters ?? this.chapters,
+      createdAt: createdAt ?? this.createdAt,
+      id: id ?? this.id,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,

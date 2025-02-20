@@ -312,17 +312,23 @@ class HomeScreen extends GetView<NovelController> {
               controller: textController,
               maxLines: 10,
               decoration: const InputDecoration(
-                hintText: '''请输入JSON格式的大纲，例如：
-{
-  "novel_title": "小说标题",
-  "chapters": [
-    {
-      "chapter_number": 1,
-      "chapter_title": "第一章",
-      "content_outline": "章节大纲内容"
-    }
-  ]
-}''',
+                hintText: '''请直接输入大纲文本，例如：
+
+《我的小说标题》
+
+第1章：初次相遇
+主角在公园偶遇女主角，两人因为一只走失的小狗而相识。
+女主角性格开朗，主动帮助主角寻找小狗的主人。
+
+第2章：深入了解
+通过寻找小狗主人的过程，两人逐渐了解彼此。
+发现彼此都对摄影有着浓厚的兴趣。
+
+注意：
+1. 小说标题需要用《》括起来
+2. 章节标题格式为"第X章：标题"
+3. 每个章节的大纲内容直接写在章节标题下方
+4. 章节之间可以用空行分隔''',
                 border: OutlineInputBorder(),
               ),
             ),

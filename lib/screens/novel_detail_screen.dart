@@ -12,153 +12,290 @@ import 'package:novel_app/controllers/api_config_controller.dart';
 import 'package:novel_app/services/ai_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:novel_app/controllers/novel_controller.dart';
 
-class NovelDetailScreen extends GetView<NovelDetailController> {
+class NovelDetailScreen extends StatefulWidget {
   final Novel novel;
 
-  NovelDetailScreen({
-    Key? key,
-    required this.novel,
-  }) : super(key: key) {
-    Get.put(NovelDetailController(novel));
+  const NovelDetailScreen({Key? key, required this.novel}) : super(key: key);
+
+  @override
+  State<NovelDetailScreen> createState() => _NovelDetailScreenState();
+}
+
+class _NovelDetailScreenState extends State<NovelDetailScreen> {
+  final NovelController _controller = Get.find<NovelController>();
+  final TextEditingController _titleController = TextEditingController();
+  final List<TextEditingController> _chapterControllers = [];
+  final List<String> _undoHistory = [];
+  final List<String> _redoHistory = [];
+  bool _isEditing = false;
+  int _currentChapterIndex = 0;
+  late Novel _currentNovel;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentNovel = widget.novel.copyWith();
+    _titleController.text = _currentNovel.title;
+    _initChapterControllers();
+  }
+
+  void _initChapterControllers() {
+    _chapterControllers.clear();
+    for (var chapter in _currentNovel.chapters) {
+      final controller = TextEditingController(text: chapter.content);
+      controller.addListener(() {
+        // 当文本发生变化时保存到历史记录
+        if (_isEditing) {
+          _saveCurrentToHistory();
+        }
+      });
+      _chapterControllers.add(controller);
+    }
+  }
+
+  void _saveCurrentToHistory() {
+    if (_currentChapterIndex < _currentNovel.chapters.length) {
+      // 只有当内容真正发生变化时才保存历史
+      final currentText = _chapterControllers[_currentChapterIndex].text;
+      final currentChapter = _currentNovel.chapters[_currentChapterIndex];
+      if (_undoHistory.isEmpty || _undoHistory.last != currentChapter.content) {
+        _undoHistory.add(currentChapter.content);
+        // 添加新的历史记录时清空重做历史
+        _redoHistory.clear();
+        setState(() {}); // 更新UI状态，使撤销按钮可用
+      }
+    }
+  }
+
+  void _undo() {
+    if (_undoHistory.isNotEmpty) {
+      // 保存当前状态到重做历史
+      _redoHistory.add(_chapterControllers[_currentChapterIndex].text);
+      // 恢复上一个状态
+      final lastState = _undoHistory.removeLast();
+      _chapterControllers[_currentChapterIndex].text = lastState;
+      
+      // 更新小说对象
+      final updatedChapters = List<Chapter>.from(_currentNovel.chapters);
+      updatedChapters[_currentChapterIndex] = updatedChapters[_currentChapterIndex].copyWith(
+        content: lastState,
+      );
+      _updateNovel(_currentNovel.copyWith(chapters: updatedChapters));
+    }
+  }
+
+  void _redo() {
+    if (_redoHistory.isNotEmpty) {
+      // 保存当前状态到撤销历史
+      _undoHistory.add(_chapterControllers[_currentChapterIndex].text);
+      // 恢复下一个状态
+      final nextState = _redoHistory.removeLast();
+      _chapterControllers[_currentChapterIndex].text = nextState;
+      
+      // 更新小说对象
+      final updatedChapters = List<Chapter>.from(_currentNovel.chapters);
+      updatedChapters[_currentChapterIndex] = updatedChapters[_currentChapterIndex].copyWith(
+        content: nextState,
+      );
+      _updateNovel(_currentNovel.copyWith(chapters: updatedChapters));
+    }
+  }
+
+  void _saveChanges() async {
+    try {
+      // 创建更新后的小说对象
+      final updatedNovel = _currentNovel.copyWith(
+        title: _titleController.text,
+      );
+
+      // 更新所有章节内容
+      final updatedChapters = List<Chapter>.from(_currentNovel.chapters);
+      for (var i = 0; i < _currentNovel.chapters.length; i++) {
+        updatedChapters[i] = updatedChapters[i].copyWith(
+          content: _chapterControllers[i].text,
+        );
+      }
+
+      // 更新小说内容
+      final finalNovel = updatedNovel.copyWith(
+        chapters: updatedChapters,
+        content: updatedChapters.map((c) => c.content).join('\n\n'),
+      );
+
+      // 保存到数据库
+      await _controller.saveNovel(finalNovel);
+      
+      // 更新本地状态
+      _updateNovel(finalNovel);
+
+      setState(() {
+        _isEditing = false;
+        // 清空历史记录
+        _undoHistory.clear();
+        _redoHistory.clear();
+      });
+
+      Get.snackbar(
+        '保存成功',
+        '所有修改已保存',
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 2),
+      );
+    } catch (e) {
+      Get.snackbar(
+        '保存失败',
+        '发生错误：$e',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red[100],
+        duration: const Duration(seconds: 3),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('《${novel.title}》'),
+        title: _isEditing
+            ? TextField(
+                controller: _titleController,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  hintText: '输入小说标题',
+                  hintStyle: TextStyle(color: Colors.white70),
+                ),
+              )
+            : Text(_currentNovel.title),
         actions: [
+          if (_isEditing) ...[
+            IconButton(
+              icon: const Icon(Icons.undo),
+              onPressed: _undoHistory.isEmpty ? null : _undo,
+              tooltip: '撤销',
+            ),
+            IconButton(
+              icon: const Icon(Icons.redo),
+              onPressed: _redoHistory.isEmpty ? null : _redo,
+              tooltip: '重做',
+            ),
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: _saveChanges,
+              tooltip: '保存',
+            ),
+          ],
           IconButton(
-            icon: const Icon(Icons.edit_note),
-            tooltip: '续写',
-            onPressed: () => Get.toNamed('/novel_continue', arguments: novel),
+            icon: Icon(_isEditing ? Icons.close : Icons.edit),
+            onPressed: () {
+              if (_isEditing) {
+                // 取消编辑，恢复原始内容
+                _titleController.text = _currentNovel.title;
+                _initChapterControllers();
+                _undoHistory.clear();
+                _redoHistory.clear();
+              }
+              setState(() {
+                _isEditing = !_isEditing;
+              });
+            },
+            tooltip: _isEditing ? '取消' : '编辑',
           ),
-          IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: () => _shareNovel(),
-          ),
-          Obx(() {
-            final isGenerating = controller.isGenerating.value;
-            final isPaused = controller.isPaused.value;
-            
-            if (!isGenerating) return const SizedBox.shrink();
-            
-            return Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    isPaused ? '已暂停' : '生成中',
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(isPaused ? Icons.play_arrow : Icons.pause),
-                  tooltip: isPaused ? '继续生成' : '暂停生成',
-                  onPressed: () {
-                    if (isPaused) {
-                      controller.resumeGeneration();
-                    } else {
-                      controller.pauseGeneration();
-                    }
-                  },
-                ),
-              ],
-            );
-          }),
         ],
       ),
       body: Column(
         children: [
-          _buildInfoSection(),
-          const Divider(),
-          _buildProgressSection(),
+          _buildChapterList(),
           Expanded(
-            child: _buildChapterList(),
+            child: _buildChapterContent(),
           ),
         ],
       ),
-      floatingActionButton: Obx(() {
-        final hasSelectedChapters = controller.selectedChapters.isNotEmpty;
-        final isGenerating = controller.isGenerating.value;
-        
-        if (isGenerating) return const SizedBox.shrink();
-        
-        return FloatingActionButton.extended(
-          onPressed: hasSelectedChapters ? () => controller.showReviewDialog() : null,
-          label: const Text('润色选中章节'),
-          icon: const Icon(Icons.auto_fix_high),
-        );
-      }),
     );
   }
 
-  Widget _buildInfoSection() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
+  Widget _buildChapterList() {
+    return Container(
+      height: 50,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _currentNovel.chapters.length,
+        itemBuilder: (context, index) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: ChoiceChip(
+              label: Text('第${_currentNovel.chapters[index].number}章'),
+              selected: _currentChapterIndex == index,
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() {
+                    _currentChapterIndex = index;
+                  });
+                }
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildChapterContent() {
+    if (_currentChapterIndex >= _currentNovel.chapters.length) {
+      return const Center(child: Text('暂无内容'));
+    }
+
+    final chapter = _currentNovel.chapters[_currentChapterIndex];
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('标题：${novel.title}',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text('类型：${novel.genre}'),
-          const SizedBox(height: 8),
-          Text('创建时间：${DateFormat('yyyy-MM-dd HH:mm').format(novel.createdAt)}'),
-          const SizedBox(height: 8),
-          Text('章节数：${novel.chapters.length}'),
+          Text(
+            chapter.title,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _isEditing
+              ? TextField(
+                  controller: _chapterControllers[_currentChapterIndex],
+                  maxLines: null,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: '输入章节内容',
+                  ),
+                )
+              : Text(
+                  chapter.content,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    height: 1.8,
+                  ),
+                ),
         ],
       ),
     );
   }
 
-  Widget _buildProgressSection() {
-    return Obx(() {
-      if (!controller.isGenerating.value) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('正在处理: 第${controller.currentProcessingChapter.value + 1}章'),
-            const SizedBox(height: 8),
-            LinearProgressIndicator(
-              value: controller.currentProcessingChapter.value / 
-                     controller.selectedChapters.length,
-            ),
-          ],
-        ),
-      );
+  @override
+  void dispose() {
+    _titleController.dispose();
+    for (var controller in _chapterControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _updateNovel(Novel newNovel) {
+    setState(() {
+      _currentNovel = newNovel;
     });
-  }
-
-  Widget _buildChapterList() {
-    return ListView.builder(
-      itemCount: novel.chapters.length,
-      itemBuilder: (context, index) {
-        final chapter = novel.chapters[index];
-        return ListTile(
-          title: Text('第${chapter.number}章：${chapter.title}'),
-          selected: controller.selectedChapters.contains(index),
-          leading: Obx(() => Checkbox(
-            value: controller.selectedChapters.contains(index),
-            onChanged: (bool? value) {
-              if (value == true) {
-                controller.selectedChapters.add(index);
-              } else {
-                controller.selectedChapters.remove(index);
-              }
-            },
-          )),
-          onTap: () => Get.to(() => ChapterDetailScreen(chapter: chapter)),
-        );
-      },
-    );
-  }
-
-  void _shareNovel() {
-    // Implementation of _shareNovel method
   }
 }
 
