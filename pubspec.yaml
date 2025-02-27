@@ -30,6 +30,7 @@ dependencies:
   pdf: ^3.10.8
   path: ^1.8.3
   html: ^0.15.0
+  file_picker: ^6.1.1
 
 dev_dependencies:
   flutter_test:
@@ -41,11 +42,19 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/
 
 msix_config:
   display_name: "岱宗文脉"
-  publisher_display_name: "Your Company Name"
-  identity_name: "com.yourcompany.novelapp"
+  publisher_display_name: "岱宗文脉"
+  identity_name: "com.daizhong.novelapp"
+  publisher: "CN=岱宗文脉"
   msix_version: "1.0.0.0"
-  logo_path: "assets/logo.png"
-  capabilities: "internetClient, musicLibrary, documentsLibrary"
+  capabilities: "internetClient,musicLibrary,documentsLibrary"
+  execution_alias: "novelapp"
+  languages: "zh-cn"
+  store: false
+  architecture: "x64"
+  sign_msix: false
+  build_windows: true

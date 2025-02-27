@@ -267,11 +267,10 @@ class NovelController extends GetxController {
         if (chapterMatch != null) {
           // 如果有上一章的内容，保存它
           if (currentChapter > 0 && currentContent.isNotEmpty) {
-            chapters.add({
-              'chapterNumber': currentChapter,
-              'chapterTitle': '第$currentChapter章：${chapters.last['chapterTitle']}',
-              'contentOutline': currentContent.toString().trim()
-            });
+            final lastChapterIndex = chapters.indexWhere((ch) => ch['chapterNumber'] == currentChapter);
+            if (lastChapterIndex != -1) {
+              chapters[lastChapterIndex]['contentOutline'] = currentContent.toString().trim();
+            }
             currentContent.clear();
           }
           
@@ -282,18 +281,18 @@ class NovelController extends GetxController {
             'chapterTitle': chapterTitle,
             'contentOutline': ''
           });
-          continue;
-        }
-        
-        // 其他行都视为当前章节的大纲内容
-        if (currentChapter > 0) {
+        } else if (currentChapter > 0) {
+          // 其他行都视为当前章节的大纲内容
           currentContent.writeln(line);
         }
       }
       
       // 保存最后一章的内容
       if (currentChapter > 0 && currentContent.isNotEmpty) {
-        chapters.last['contentOutline'] = currentContent.toString().trim();
+        final lastChapterIndex = chapters.indexWhere((ch) => ch['chapterNumber'] == currentChapter);
+        if (lastChapterIndex != -1) {
+          chapters[lastChapterIndex]['contentOutline'] = currentContent.toString().trim();
+        }
       }
       
       // 如果没有解析到小说标题，使用默认标题
@@ -311,13 +310,23 @@ class NovelController extends GetxController {
         )).toList(),
       );
       
+      // 确保章节按顺序排序
+      outline.chapters.sort((a, b) => a.chapterNumber.compareTo(b.chapterNumber));
+      
       currentOutline.value = outline;
       isUsingOutline.value = true;
       title.value = outline.novelTitle;
+      totalChapters.value = outline.chapters.length;
       
-      Get.snackbar('成功', '大纲导入成功！');
+      print('导入大纲成功：${outline.chapters.length} 章');
+      for (var ch in outline.chapters) {
+        print('第${ch.chapterNumber}章：${ch.chapterTitle}\n${ch.contentOutline}\n');
+      }
+      
+      Get.snackbar('成功', '大纲导入成功！共 ${outline.chapters.length} 章');
       return true;
     } catch (e) {
+      print('导入大纲失败：$e');
       Get.snackbar('错误', '大纲格式不正确：$e');
       return false;
     }
@@ -341,7 +350,7 @@ class NovelController extends GetxController {
       return;
     }
 
-    if (selectedCharacterTypes.isEmpty || selectedCharacterCards.isEmpty) {
+    if (!isUsingOutline.value && (selectedCharacterTypes.isEmpty || selectedCharacterCards.isEmpty)) {
       Get.snackbar('错误', '请选择至少一个角色');
       return;
     }
@@ -349,6 +358,7 @@ class NovelController extends GetxController {
     if (isGenerating.value && !continueGeneration) return;
     
     isGenerating.value = true;
+    _shouldStop.value = false;
     generationStatus.value = '正在生成小说...';
     if (!continueGeneration) {
       realtimeOutput.value = '';
@@ -370,12 +380,25 @@ class NovelController extends GetxController {
       // 如果使用大纲，则按照大纲生成
       if (isUsingOutline.value && currentOutline.value != null) {
         final outline = currentOutline.value!;
-        for (var chapterOutline in outline.chapters) {
-          if (_shouldStop.value) break;
+        final totalOutlineChapters = outline.chapters.length;
+        
+        print('开始按大纲生成：${totalOutlineChapters} 章');
+        
+        for (var i = 0; i < outline.chapters.length; i++) {
+          if (_shouldStop.value) {
+            print('生成被停止');
+            break;
+          }
+          
+          final chapterOutline = outline.chapters[i];
+          print('生成第 ${i + 1}/${totalOutlineChapters} 章：${chapterOutline.chapterTitle}');
           
           generationStatus.value = '正在生成第${chapterOutline.chapterNumber}章...';
           _currentChapter.value = chapterOutline.chapterNumber;
-          generationProgress.value = chapterOutline.chapterNumber / outline.chapters.length;
+          generationProgress.value = (i + 1) / totalOutlineChapters;
+          
+          _updateRealtimeOutput('\n开始生成第${chapterOutline.chapterNumber}章: ${chapterOutline.chapterTitle}\n');
+          _updateRealtimeOutput('大纲内容：${chapterOutline.contentOutline}\n');
           
           final prompt = '''
 基于以下信息生成小说章节：
@@ -384,18 +407,18 @@ class NovelController extends GetxController {
 小说类型：$genre
 章节信息：第${chapterOutline.chapterNumber}章 ${chapterOutline.chapterTitle}
 章节大纲：${chapterOutline.contentOutline}
-角色设定：$theme
 
 要求：
 1. 严格按照大纲内容展开情节
 2. 保持叙事连贯性和合理性
 3. 细节要丰富生动
-4. 符合小说整体风格和人物性格
+4. 符合小说整体风格
 5. 字数在3000-5000字之间
 
 请直接返回生成的章节内容，不需要包含标题。''';
 
           final content = await _aiService.generateChapterContent(prompt);
+          print('章节内容生成完成：${content.length} 字');
           
           final chapter = Chapter(
             number: chapterOutline.chapterNumber,
@@ -404,12 +427,27 @@ class NovelController extends GetxController {
           );
           
           await saveChapter(title, chapter);
+          print('章节已保存');
           
           _updateRealtimeOutput('\n第${chapter.number}章已生成完成\n');
+          
+          // 通知进度
+          Get.snackbar(
+            '进度', 
+            '第${chapter.number}章已生成完成',
+            duration: const Duration(seconds: 1),
+          );
         }
+        
+        // 大纲模式生成完成
+        if (!_shouldStop.value) {
+          print('所有章节生成完成');
+          Get.snackbar('成功', '已完成所有章节的生成');
+          _resetGenerationState();
+        }
+        
       } else {
         // 原有的生成逻辑
-        // 构建完整的创作要求
         final theme = '''${getCharacterSettings()}
 故事背景：${background.value}
 其他要求：${otherRequirements.value}''';
@@ -442,17 +480,14 @@ class NovelController extends GetxController {
             _updateRealtimeOutput(content);
           },
           onChapterComplete: (chapterNumber, chapterTitle, chapterContent) async {
-            // 每章完成时立即保存
             final chapter = Chapter(
               number: chapterNumber,
               title: chapterTitle,
               content: chapterContent,
             );
             
-            // 保存章节
             await saveChapter(title, chapter);
             
-            // 更新进度提示
             Get.snackbar(
               '保存成功', 
               '第$chapterNumber章已保存到书库',
@@ -462,12 +497,13 @@ class NovelController extends GetxController {
         );
       }
 
-      if (!isPaused.value && _currentChapter.value >= totalChapters) {
+      if (!isPaused.value && !_shouldStop.value) {
         Get.snackbar('成功', '小说生成完成');
         _resetGenerationState();
         await _novelGenerator.clearGenerationProgress();
       }
     } catch (e) {
+      print('生成失败：$e');
       if (e.toString() == '生成已暂停') return;
       _updateRealtimeOutput('\n生成失败：$e\n');
       Get.snackbar('错误', '生成失败：$e');
@@ -582,10 +618,15 @@ class NovelController extends GetxController {
     _currentChapter.value = 0;
     _hasOutline.value = false;
     generationProgress.value = 0;
+    _shouldStop.value = false;
     
     // 清除之前的输出
     _clearRealtimeOutput();
-    clearAllChapters();
+    
+    // 如果不是使用大纲模式，则清除所有章节
+    if (!isUsingOutline.value) {
+      clearAllChapters();
+    }
     
     // 开始生成
     generateNovel(

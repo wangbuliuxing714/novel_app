@@ -4,6 +4,7 @@ import 'package:novel_app/controllers/novel_controller.dart';
 import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/screens/novel_detail_screen.dart';
 import 'package:novel_app/services/export_service.dart';
+import 'package:novel_app/screens/novel_continue/novel_continue_screen.dart';
 
 class LibraryScreen extends GetView<NovelController> {
   final _exportService = ExportService();
@@ -89,6 +90,16 @@ class LibraryScreen extends GetView<NovelController> {
                           PopupMenuButton<String>(
                             itemBuilder: (context) => [
                               const PopupMenuItem(
+                                value: 'continue',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.edit_note),
+                                    SizedBox(width: 8),
+                                    Text('续写'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
                                 value: 'export',
                                 child: Row(
                                   children: [
@@ -111,6 +122,9 @@ class LibraryScreen extends GetView<NovelController> {
                             ],
                             onSelected: (value) {
                               switch (value) {
+                                case 'continue':
+                                  Get.to(() => NovelContinueScreen(novel: novel));
+                                  break;
                                 case 'export':
                                   _showExportDialog(context, novel);
                                   break;
