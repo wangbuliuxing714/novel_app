@@ -3,6 +3,9 @@
 // 在 NovelGeneratorService 中被使用
 
 import 'master_prompts.dart';
+import 'package:novel_app/models/chapter.dart';
+import 'package:novel_app/prompts/female_prompts.dart';
+import 'package:novel_app/prompts/male_prompts.dart';
 
 class ChapterGeneration {
   /// 章节生成的系统提示词
@@ -36,65 +39,74 @@ ${MasterPrompts.basicPrinciples}
   static String getChapterPrompt({
     required String title,
     required int chapterNumber,
-    required String outline,
-    required List<String> previousChapters,
     required int totalChapters,
+    required String outline,
+    required List<dynamic> previousChapters,
     required String genre,
     required String theme,
     required String style,
-  }) => '''
-创作《$title》第 $chapterNumber 章（共$totalChapters章）
-
-信息：
-- 类型：$genre
-- 主题：$theme
-- 风格：$style
-
-大纲：
-$outline
-
-${previousChapters.isNotEmpty ? '''上章概要：
-${previousChapters.last}''' : ''}
-
-要求：
-1. 按大纲发展
-2. 场景要具体
-3. 对话要传神
-4. 前后连贯
-5. 为后文铺垫
-''';
+    String? targetReaders,
+  }) {
+    // 根据目标读者选择不同的提示词
+    if (targetReaders == '女性向') {
+      return FemalePrompts.getChapterPrompt(
+        title, 
+        genre, 
+        chapterNumber, 
+        totalChapters, 
+        _extractChapterTitle(outline, chapterNumber),
+        _extractChapterOutline(outline, chapterNumber)
+      );
+    } else {
+      return MalePrompts.getChapterPrompt(
+        title, 
+        genre, 
+        chapterNumber, 
+        totalChapters, 
+        _extractChapterTitle(outline, chapterNumber),
+        _extractChapterOutline(outline, chapterNumber)
+      );
+    }
+  }
+  
+  /// 从大纲中提取章节标题
+  static String _extractChapterTitle(String outline, int chapterNumber) {
+    // 尝试匹配"第X章：标题"或"第X章 标题"格式
+    final RegExp titleRegex = RegExp(r'第' + chapterNumber.toString() + r'章[：\s]+(.*?)[\n\r]');
+    final match = titleRegex.firstMatch(outline);
+    if (match != null && match.groupCount >= 1) {
+      return match.group(1) ?? '第$chapterNumber章';
+    }
+    return '第$chapterNumber章';
+  }
+  
+  /// 从大纲中提取章节内容
+  static String _extractChapterOutline(String outline, int chapterNumber) {
+    // 尝试匹配第N章的整个内容块
+    final RegExp chapterRegex = RegExp(r'第' + chapterNumber.toString() + r'章.*?(?=第' + (chapterNumber + 1).toString() + r'章|$)', dotAll: true);
+    final match = chapterRegex.firstMatch(outline);
+    if (match != null) {
+      return match.group(0) ?? '';
+    }
+    return '';
+  }
 
   /// 章节格式化方法
   static String formatChapter(String rawChapter) {
-    // 移除多余的空行和特殊字符
-    final lines = rawChapter
-        .split('\n')
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
-        .toList();
+    // 清理生成的内容，移除可能的标题和多余的空行
+    String cleaned = rawChapter.trim();
     
-    // 格式化处理
-    final formattedLines = <String>[];
-    var previousLineIsTitle = false;
-    
-    for (var line in lines) {
-      // 移除章节标题标记
-      if (line.startsWith('第') && line.contains('章')) {
-        continue;
+    // 移除可能的章节标题（如果AI生成了标题）
+    if (cleaned.startsWith('第') && cleaned.contains('章')) {
+      final titleEndIndex = cleaned.indexOf('\n');
+      if (titleEndIndex > 0) {
+        cleaned = cleaned.substring(titleEndIndex).trim();
       }
-      
-      // 移除特殊字符
-      line = line.replaceAll(RegExp(r'[#\*]'), '');
-      
-      // 处理段落间距
-      if (!previousLineIsTitle && line.isNotEmpty) {
-        formattedLines.add('');
-      }
-      
-      formattedLines.add(line);
-      previousLineIsTitle = line.endsWith('：') || line.endsWith(':');
     }
     
-    return formattedLines.join('\n').trim();
+    // 移除多余的空行
+    cleaned = cleaned.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    
+    return cleaned;
   }
 } 

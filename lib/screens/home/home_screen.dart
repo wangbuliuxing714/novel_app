@@ -18,8 +18,22 @@ import 'package:novel_app/services/character_type_service.dart';
 import 'package:novel_app/services/character_card_service.dart';
 import 'package:novel_app/screens/character_card_list_screen.dart';
 
-class HomeScreen extends GetView<NovelController> {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final NovelController controller = Get.find<NovelController>();
+  final ScrollController _outputScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _outputScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +152,7 @@ class HomeScreen extends GetView<NovelController> {
                 ElevatedButton.icon(
                   icon: const Icon(Icons.upload_file),
                   label: const Text('导入大纲'),
-                  onPressed: () => _showImportOutlineDialog(Get.context!),
+                  onPressed: () => _showImportOutlineDialog(context),
                 ),
               ],
             ),
@@ -160,6 +174,8 @@ class HomeScreen extends GetView<NovelController> {
                     ),
                     const SizedBox(height: 16),
                     _buildCharacterSelector(),
+                    const SizedBox(height: 12),
+                    _buildTargetReaderSelector(),
                     const SizedBox(height: 12),
                     TextField(
                       decoration: const InputDecoration(
@@ -206,11 +222,11 @@ class HomeScreen extends GetView<NovelController> {
                   const Text('章节数量：', style: TextStyle(fontSize: 14)),
                   Expanded(
                     child: Slider(
-                      value: controller.totalChapters.value.toDouble(),
+                      value: controller.totalChaptersRx.value.toDouble(),
                       min: 1,
                       max: 1000,
                       divisions: 999,
-                      label: controller.totalChapters.value.toString(),
+                      label: controller.totalChaptersRx.value.toString(),
                       onChanged: (value) =>
                           controller.updateTotalChapters(value.toInt()),
                     ),
@@ -225,7 +241,7 @@ class HomeScreen extends GetView<NovelController> {
                         suffix: Text('章'),
                       ),
                       controller: TextEditingController(
-                        text: controller.totalChapters.value.toString(),
+                        text: controller.totalChaptersRx.value.toString(),
                       ),
                       onSubmitted: (value) {
                         final chapters = int.tryParse(value);
@@ -279,7 +295,7 @@ class HomeScreen extends GetView<NovelController> {
                 Builder(
                   builder: (context) => ElevatedButton.icon(
                     onPressed: () {
-                      _showDialog(context);
+                      controller.startNewNovel();
                     },
                     icon: const Icon(Icons.add),
                     label: const Text('开始新小说'),
@@ -500,6 +516,42 @@ class HomeScreen extends GetView<NovelController> {
     return parts.join(' · ');
   }
 
+  Widget _buildTargetReaderSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '目标读者',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Obx(() => Row(
+          children: [
+            Expanded(
+              child: RadioListTile<String>(
+                title: const Text('男性向'),
+                value: '男性向',
+                groupValue: controller.targetReader.value,
+                onChanged: (value) => controller.updateTargetReader(value!),
+              ),
+            ),
+            Expanded(
+              child: RadioListTile<String>(
+                title: const Text('女性向'),
+                value: '女性向',
+                groupValue: controller.targetReader.value,
+                onChanged: (value) => controller.updateTargetReader(value!),
+              ),
+            ),
+          ],
+        )),
+      ],
+    );
+  }
+
   void _showCharacterCardSelector(CharacterType type) {
     final characterCardService = Get.find<CharacterCardService>();
     
@@ -556,42 +608,101 @@ class HomeScreen extends GetView<NovelController> {
           return const SizedBox();
         }
         return Card(
+          elevation: 4.0,
+          margin: const EdgeInsets.all(8.0),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '生成进度',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      '生成进度',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: Colors.green,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Text('正在生成', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 LinearProgressIndicator(
                   value: controller.generationProgress.value,
+                  minHeight: 8,
+                  backgroundColor: Colors.grey.withOpacity(0.2),
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
                 ),
                 const SizedBox(height: 8),
-                Text(controller.generationStatus.value),
+                Text(
+                  controller.generationStatus.value,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 16),
+                const Text(
+                  '实时输出:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Container(
                   height: 300,
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.05),
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.withOpacity(0.3)),
                   ),
-                  child: Obx(() => SingleChildScrollView(
-                    reverse: true,
-                    padding: const EdgeInsets.all(12),
-                    child: Text(
-                      controller.realtimeOutput.value,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        height: 1.5,
+                  child: Obx(() {
+                    // 当输出内容更新时，滚动到底部
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_outputScrollController.hasClients) {
+                        _outputScrollController.jumpTo(
+                          _outputScrollController.position.maxScrollExtent,
+                        );
+                      }
+                    });
+                    
+                    return SingleChildScrollView(
+                      controller: _outputScrollController,
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        controller.realtimeOutput.value.isEmpty 
+                            ? '等待生成内容...' 
+                            : controller.realtimeOutput.value,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                        ),
                       ),
-                    ),
-                  )),
+                    );
+                  }),
                 ),
               ],
             ),

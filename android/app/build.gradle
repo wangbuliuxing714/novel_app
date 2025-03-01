@@ -42,11 +42,11 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.novel_app"
+        applicationId "com.daizhong.novelapp"
         minSdkVersion 21
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
     }
 
     signingConfigs {

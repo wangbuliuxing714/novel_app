@@ -4,6 +4,9 @@ import 'package:novel_app/controllers/novel_controller.dart';
 import 'package:novel_app/controllers/tts_controller.dart';
 import 'package:novel_app/controllers/api_config_controller.dart';
 import 'package:novel_app/models/novel.dart';
+import 'package:novel_app/screens/prompt_package_screen.dart';
+import 'package:novel_app/screens/character_generator_screen.dart';
+import 'package:novel_app/screens/background_generator_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
@@ -32,6 +35,30 @@ class ToolsScreen extends StatelessWidget {
                   subtitle: const Text('将小说转换为语音'),
                   trailing: const Icon(Icons.arrow_forward_ios),
                   onTap: () => Get.toNamed('/tts'),
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.text_fields),
+                  title: const Text('提示词包管理'),
+                  subtitle: const Text('管理小说生成的提示词包'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () => Get.to(() => const PromptPackageScreen()),
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.person_add),
+                  title: const Text('角色生成器'),
+                  subtitle: const Text('自动生成小说角色'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () => Get.to(() => const CharacterGeneratorScreen()),
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.landscape),
+                  title: const Text('背景生成器'),
+                  subtitle: const Text('自动生成故事背景和世界观'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () => Get.to(() => const BackgroundGeneratorScreen()),
                 ),
               ],
             ),

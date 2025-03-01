@@ -30,12 +30,14 @@ class NovelController extends GetxController {
   final background = ''.obs;
   final otherRequirements = ''.obs;
   final style = '轻松幽默'.obs;
-  final totalChapters = 1.obs;
   final selectedGenres = <String>[].obs;
+  
+  // 添加目标读者变量
+  final targetReader = '男性向'.obs;
   
   // 新增角色选择相关的变量
   final selectedCharacterTypes = <CharacterType>[].obs;
-  final selectedCharacterCards = <String, CharacterCard>{}.obs;
+  final Map<String, CharacterCard> selectedCharacterCards = <String, CharacterCard>{}.obs;
   
   final isGenerating = false.obs;
   final generationStatus = ''.obs;
@@ -57,6 +59,73 @@ class NovelController extends GetxController {
   // 添加大纲相关变量
   final currentOutline = Rx<NovelOutline?>(null);
   final isUsingOutline = false.obs;
+
+  // 新增属性
+  final RxString _currentNovelBackground = ''.obs;
+  final RxList<String> _specialRequirements = <String>[].obs;
+  final RxString _selectedStyle = ''.obs;
+  final RxInt _totalChapters = 5.obs;
+  final RxString _currentNovelTitle = ''.obs;
+  
+  // 新增getter
+  String get currentNovelBackground => _currentNovelBackground.value;
+  List<String> get specialRequirements => _specialRequirements;
+  String get selectedStyle => _selectedStyle.value;
+  int get totalChapters => _totalChapters.value;
+  RxInt get totalChaptersRx => _totalChapters;
+  String get currentNovelTitle => _currentNovelTitle.value;
+  
+  // 新增setter方法
+  void setNovelTitle(String title) {
+    _currentNovelTitle.value = title;
+  }
+  
+  void setNovelBackground(String background) {
+    _currentNovelBackground.value = background;
+  }
+  
+  void setSpecialRequirements(List<String> requirements) {
+    _specialRequirements.assignAll(requirements);
+  }
+  
+  void setSelectedGenres(List<String> genres) {
+    selectedGenres.assignAll(genres);
+  }
+  
+  void setSelectedCharacterTypes(List<CharacterType> types) {
+    selectedCharacterTypes.assignAll(types);
+  }
+  
+  void setSelectedCharacterCards(Map<String, CharacterCard> cards) {
+    selectedCharacterCards.assignAll(cards);
+  }
+  
+  void setSelectedStyle(String style) {
+    _selectedStyle.value = style;
+  }
+  
+  void setTargetReader(String value) => targetReader.value = value;
+  
+  void setTotalChapters(int value) {
+    if (value > 0) {
+      // 如果用户输入的值超过1000，给出提示但仍然允许设置
+      if (value > 1000) {
+        Get.snackbar(
+          '提示', 
+          '章节数量较多，生成时间可能会较长，建议不要超过1000章',
+          duration: const Duration(seconds: 5),
+        );
+      }
+      _totalChapters.value = value;
+    } else {
+      Get.snackbar('错误', '章节数量必须大于0');
+      _totalChapters.value = 1;  // 设置为最小值
+    }
+  }
+  
+  void setUsingOutline(bool useOutline) {
+    isUsingOutline.value = useOutline;
+  }
 
   @override
   void onInit() async {
@@ -152,8 +221,8 @@ class NovelController extends GetxController {
   void updateBackground(String value) => background.value = value;
   void updateOtherRequirements(String value) => otherRequirements.value = value;
   void updateStyle(String value) => style.value = value;
+  void updateTargetReader(String value) => targetReader.value = value;
   void updateTotalChapters(int value) {
-    // 确保章节数在合理范围内
     if (value > 0) {
       // 如果用户输入的值超过1000，给出提示但仍然允许设置
       if (value > 1000) {
@@ -163,10 +232,10 @@ class NovelController extends GetxController {
           duration: const Duration(seconds: 5),
         );
       }
-      totalChapters.value = value;
+      _totalChapters.value = value;
     } else {
       Get.snackbar('错误', '章节数量必须大于0');
-      totalChapters.value = 1;  // 设置为最小值
+      _totalChapters.value = 1;  // 设置为最小值
     }
   }
 
@@ -179,19 +248,33 @@ class NovelController extends GetxController {
   }
 
   void clearCache() {
+    print('清除所有缓存');
     _cacheService.clearAllCache();
+    _novelGenerator.clearFailedGenerationCache();
+    
+    // 清除生成进度
+    _novelGenerator.clearGenerationProgress();
   }
 
   void _updateRealtimeOutput(String text) {
-    realtimeOutput.value += text;
-    if (realtimeOutput.value.length > 10000) {
-      realtimeOutput.value = realtimeOutput.value.substring(
-        realtimeOutput.value.length - 10000,
-      );
-    }
+    if (text.isEmpty) return;
+    
+    // 添加日志，帮助调试
+    print('更新实时输出: ${text.length} 字符');
+    
+    // 确保在主线程更新UI
+    Get.engine.addPostFrameCallback((_) {
+      realtimeOutput.value += text;
+      if (realtimeOutput.value.length > 10000) {
+        realtimeOutput.value = realtimeOutput.value.substring(
+          realtimeOutput.value.length - 10000,
+        );
+      }
+    });
   }
 
   void _clearRealtimeOutput() {
+    print('清除实时输出');
     realtimeOutput.value = '';
   }
 
@@ -200,7 +283,7 @@ class NovelController extends GetxController {
     if (selectedCharacterTypes.contains(type)) {
       selectedCharacterTypes.remove(type);
       // 移除该类型下已选择的角色卡片
-      selectedCharacterCards.remove(type.id);
+      selectedCharacterCards.remove(type);
     } else {
       selectedCharacterTypes.add(type);
     }
@@ -316,7 +399,7 @@ class NovelController extends GetxController {
       currentOutline.value = outline;
       isUsingOutline.value = true;
       title.value = outline.novelTitle;
-      totalChapters.value = outline.chapters.length;
+      _totalChapters.value = outline.chapters.length;
       
       print('导入大纲成功：${outline.chapters.length} 章');
       for (var ch in outline.chapters) {
@@ -338,6 +421,9 @@ class NovelController extends GetxController {
     required String genre,
     required String theme,
     required int totalChapters,
+    String? background,
+    String? style,
+    List<String>? specialRequirements,
     bool continueGeneration = false,
   }) async {
     if (title.isEmpty) {
@@ -360,8 +446,15 @@ class NovelController extends GetxController {
     isGenerating.value = true;
     _shouldStop.value = false;
     generationStatus.value = '正在生成小说...';
+    
+    // 确保在开始新小说时清除输出
     if (!continueGeneration) {
-      realtimeOutput.value = '';
+      _clearRealtimeOutput();
+      // 添加初始输出，确认UI更新
+      _updateRealtimeOutput('开始生成小说: ${title}\n类型: ${genre}\n');
+      
+      // 清除之前的缓存，确保不会使用旧的缓存内容
+      clearCache();
     }
 
     try {
@@ -449,17 +542,22 @@ class NovelController extends GetxController {
       } else {
         // 原有的生成逻辑
         final theme = '''${getCharacterSettings()}
-故事背景：${background.value}
-其他要求：${otherRequirements.value}''';
+故事背景：${background ?? this.background.value}
+其他要求：${specialRequirements?.join('\n') ?? otherRequirements.value}
+风格：${style ?? this.style.value}''';
 
         await _novelGenerator.generateNovel(
           title: title,
           genre: genre,
           theme: theme,
-          targetReaders: '爱看网文的年轻人',
+          targetReaders: targetReader.value,
           totalChapters: totalChapters,
+          background: background ?? '',
+          style: style ?? '',
+          specialRequirements: specialRequirements,
           continueGeneration: continueGeneration,
           onProgress: (status) async {
+            print('生成进度更新: $status');
             generationStatus.value = status;
             _updateRealtimeOutput('\n$status\n');
             
@@ -477,9 +575,11 @@ class NovelController extends GetxController {
             }
           },
           onContent: (content) {
+            print('收到内容更新: ${content.length} 字符');
             _updateRealtimeOutput(content);
           },
           onChapterComplete: (chapterNumber, chapterTitle, chapterContent) async {
+            print('章节完成: 第$chapterNumber章 $chapterTitle');
             final chapter = Chapter(
               number: chapterNumber,
               title: chapterTitle,
@@ -633,7 +733,7 @@ class NovelController extends GetxController {
       title: title.value,
       genre: selectedGenres.join('、'),
       theme: getCharacterSettings(),
-      totalChapters: totalChapters.value,
+      totalChapters: _totalChapters.value,
       continueGeneration: false,
     );
   }
@@ -645,15 +745,26 @@ class NovelController extends GetxController {
     try {
       // 重置暂停状态
       isPaused.value = false;
+      
+      // 通知生成服务继续生成
       _novelGenerator.resumeGeneration();
       
       // 从当前进度继续生成
       _updateRealtimeOutput('\n继续生成，从第${_currentChapter.value}章开始...\n');
+      
+      // 通知用户
+      Get.snackbar(
+        '继续生成', 
+        '正在从第${_currentChapter.value}章继续生成',
+        duration: const Duration(seconds: 2),
+      );
+      
+      // 继续生成过程
       await generateNovel(
         title: title.value,
         genre: selectedGenres.join('、'),
         theme: getCharacterSettings(),
-        totalChapters: totalChapters.value,
+        totalChapters: _totalChapters.value,
         continueGeneration: true,  // 设置为继续生成模式
       );
     } catch (e) {
@@ -668,39 +779,50 @@ class NovelController extends GetxController {
     isPaused.value = true;
     _novelGenerator.pauseGeneration();
     _updateRealtimeOutput('\n已暂停生成，当前进度：第${_currentChapter.value}章\n');
+    
+    // 保存当前状态，确保暂停状态被正确保存
+    Get.snackbar(
+      '已暂停', 
+      '生成已暂停，可以点击"继续生成"按钮恢复',
+      duration: const Duration(seconds: 2),
+    );
   }
 
-  // 开始新小说
+  // 添加开始新小说的方法
   void startNewNovel() {
-    // 清除所有生成的章节和缓存
-    _generatedChapters.clear();
-    clearCache();
+    // 清除所有状态
+    print('开始新小说，清除所有状态');
     
-    // 重置所有状态为默认值
+    // 清除输入状态
     title.value = '';
     background.value = '';
     otherRequirements.value = '';
-    style.value = '轻松幽默';  // 设置默认风格
-    totalChapters.value = 1;   // 设置为最小值
     selectedGenres.clear();
     selectedCharacterTypes.clear();
     selectedCharacterCards.clear();
-    novels.clear();
-    isGenerating.value = false;
-    isPaused.value = false;
     
-    // 重置进度和输出
-    generationProgress.value = 0;
+    // 清除生成状态
+    _clearRealtimeOutput();
     generationStatus.value = '';
-    realtimeOutput.value = '';
+    generationProgress.value = 0.0;
+    _currentChapter.value = 0;
+    _hasOutline.value = false;
+    
+    // 清除大纲状态
+    currentOutline.value = null;
+    isUsingOutline.value = false;
+    
+    // 清除缓存
+    clearCache();
+    
+    // 清除生成的章节
+    _generatedChapters.clear();
     
     // 通知用户
     Get.snackbar(
-      '已清除',
-      '所有内容已清除，请重新设置小说信息',
-      snackPosition: SnackPosition.TOP,
-      backgroundColor: Get.theme.snackBarTheme.backgroundColor,
-      colorText: Get.theme.snackBarTheme.actionTextColor,
+      '已重置', 
+      '所有状态已清除，可以开始创作新小说',
+      duration: const Duration(seconds: 2),
     );
   }
 

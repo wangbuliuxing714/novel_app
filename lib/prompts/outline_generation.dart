@@ -141,4 +141,44 @@ $theme
     
     return formattedLines.join('\n');
   }
+
+  static String generateOutlinePrompt(String title, String genre, String theme, String targetReaders, int totalChapters) {
+    return '''
+${MasterPrompts.expectationPrompt}
+
+请根据以下信息创作一部小说的大纲：
+
+小说标题：$title
+小说类型：$genre
+主题与背景：$theme
+目标读者：$targetReaders
+总章节数：$totalChapters
+
+要求：
+1. 创建一个引人入胜的故事大纲，包含总体故事梗概和每章内容概述
+2. 确保故事有明确的起承转合，情节发展合理
+3. 每个章节都要包含至少一种期待感类型（展现价值型或矛盾冲突型）
+4. 主角的价值被埋没后，最终能够得到展现
+5. 矛盾冲突能够层层递进，不断升级
+6. 在关键情节点上，通过期待感的满足给读者带来情感共鸣
+7. 章节标题要吸引人，能够引起读者的好奇心
+8. 每章概述应包含200-300字左右的内容，详细说明该章节的主要事件和情感变化
+
+请按照以下格式输出：
+
+《$title》
+
+【总体梗概】
+(这里是整部小说的总体梗概，500字左右)
+
+【章节大纲】
+第1章：章节标题
+章节内容概述，包含该章节的主要事件、人物互动和情感变化。标明该章节使用的期待感类型。
+
+第2章：章节标题
+章节内容概述，包含该章节的主要事件、人物互动和情感变化。标明该章节使用的期待感类型。
+
+...以此类推，直到第${totalChapters}章
+''';
+  }
 } 

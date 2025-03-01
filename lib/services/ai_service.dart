@@ -22,6 +22,28 @@ class AIService extends GetxService {
 
   AIService(this._apiConfig);
 
+  Future<String> generateContent(String prompt) async {
+    final completer = Completer<String>();
+    final buffer = StringBuffer();
+    
+    try {
+      await for (final chunk in generateTextStream(
+        systemPrompt: "你是一个专业的小说创作助手，请根据用户的要求提供高质量的内容。",
+        userPrompt: prompt,
+        temperature: 0.7,
+        maxTokens: 4000,
+      )) {
+        buffer.write(chunk);
+      }
+      
+      completer.complete(buffer.toString());
+    } catch (e) {
+      completer.completeError('生成内容失败: $e');
+    }
+    
+    return completer.future;
+  }
+
   Stream<String> generateTextStream({
     required String systemPrompt,
     required String userPrompt,

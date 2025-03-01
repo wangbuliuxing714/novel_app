@@ -32,6 +32,10 @@ import 'package:novel_app/adapters/chapter_adapter.dart';
 import 'package:novel_app/controllers/tts_controller.dart';
 import 'package:novel_app/screens/tools/tools_screen.dart';
 import 'package:novel_app/screens/novel_continue/novel_continue_screen.dart';
+import 'package:novel_app/services/prompt_package_service.dart';
+import 'package:novel_app/controllers/prompt_package_controller.dart';
+import 'package:novel_app/services/character_generator_service.dart';
+import 'package:novel_app/services/background_generator_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -100,6 +104,19 @@ void main() async {
     final licenseService = Get.put(LicenseService());
     await licenseService.init();
   }
+
+  // 在初始化服务的地方添加提示词包服务
+  await Get.putAsync(() => PromptPackageService().init());
+  final promptPackageController = Get.put(PromptPackageController());
+  
+  // 初始化角色生成服务和背景生成服务
+  Get.put(CharacterGeneratorService(
+    aiService, 
+    Get.find<CharacterCardService>(), 
+    Get.find<CharacterTypeService>(),
+    promptPackageController
+  ));
+  Get.put(BackgroundGeneratorService(aiService, promptPackageController));
 
   runApp(const MyApp());
 }

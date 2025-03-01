@@ -152,6 +152,13 @@ class GenreController extends GetxController {
         .toList();
   }
 
+  // 获取所有类型列表，用于下拉选择
+  List<NovelGenre> get genres {
+    return categories
+        .expand((category) => category.genres)
+        .toList();
+  }
+
   // 根据类型名称获取提示词
   String? getPromptByGenreName(String genreName) {
     for (var category in categories) {

@@ -9,50 +9,54 @@ class ContentReviewService extends GetxService {
   final AIService _aiService;
   final ApiConfigController _apiConfig;
   final CacheService _cacheService;
+  
+  // 添加缺少的状态变量
+  final RxBool _isReviewing = false.obs;
+  final RxString _reviewStatus = ''.obs;
 
   ContentReviewService(this._aiService, this._apiConfig, this._cacheService);
+  
+  // 添加状态更新方法
+  void _updateStatus(String status) {
+    _reviewStatus.value = status;
+    print('内容审查状态: $status');
+  }
 
   Future<String> reviewContent({
     required String content,
     required String style,
     required AIModel model,
+    String? userRequirements,
   }) async {
-    final systemPrompt = '''【重要提示】
-在开始审查和优化内容之前：
-1. 请仔细阅读并完全理解所有审查要求
-2. 确保理解每一条规则和用户的具体要求
-3. 在审查过程中始终保持警惕
-4. 如有疑问，请按最严格的标准执行审查
+    try {
+      _isReviewing.value = true;
+      _updateStatus('正在审查内容...');
 
-【审查原则】
-你是一位严谨的文学编辑，需要遵循以下原则：
+      final systemPrompt = '''你是一位专业的文学编辑，需要对以下内容进行深度审查和润色。请注意：
 
-1. 内容质量控制（最高优先级）：
-   - 严格检查并删除任何重复的段落
-   - 确保每个段落都包含独特的信息
-   - 避免相似句式的重复使用
-   - 保持场景描写的独特性
-   - 增强段落之间的逻辑连贯性
-
-2. 重复内容检查（最高优先级）：
-   - 严格检查并删除任何重复的段落
+1. 内容质量：
+   - 删除所有重复的段落和相似的描写
    - 确保每个段落都包含新的信息
-   - 避免使用相似的句式和描写方式
-   - 检查并优化相似场景的描写
-   - 保持每个段落的独特性
-
-3. 内容质量控制：
-   - 确保每个段落都有实质内容
-   - 删除冗余和无意义的过渡段落
    - 优化段落之间的逻辑连接
-   - 增强场景描写的生动性
-   - 提升人物刻画的立体感
+   - 增强内容的生动性和细节描写
 
-4. 写作风格优化：
-   - 根据指定风格调整表达方式
-   - 保持文风的一致性
-   - 增强语言的表现力
-   - 优化修辞手法的运用
+2. 语言风格：
+   - 按照"$style"的风格要求进行调整
+   - 保持语言的一致性
+   - 提高表达的准确性
+   - 增加语言的多样性
+
+3. 情节发展：
+   - 确保情节的连贯性
+   - 优化情节的节奏感
+   - 增强冲突和转折
+   - 完善故事的起承转合
+
+4. 人物塑造：
+   - 丰富人物的性格特点
+   - 增加人物的心理描写
+   - 优化人物对话的真实感
+   - 强化人物形象的立体感
 
 5. 结构完整性：
    - 检查段落之间的衔接
@@ -68,7 +72,7 @@ class ContentReviewService extends GetxService {
 
 请对内容进行深入审查，确保没有重复段落，并按照要求进行润色。''';
 
-    final userPrompt = '''请对以下内容进行深度审查和润色。重点关注：
+      final userPrompt = '''请对以下内容进行深度审查和润色。重点关注：
 1. 删除所有重复的段落和相似的描写
 2. 确保每个段落都包含新的信息
 3. 优化段落之间的逻辑连接
@@ -78,35 +82,59 @@ class ContentReviewService extends GetxService {
 以下是需要审查的内容：
 $content''';
 
-    final buffer = StringBuffer();
-    
-    await for (final chunk in _aiService.generateTextStream(
-      systemPrompt: systemPrompt,
-      userPrompt: userPrompt,
-      maxTokens: 8100,
-      temperature: 0.7,
-    )) {
-      buffer.write(chunk);
-    }
+      final buffer = StringBuffer();
+      
+      await for (final chunk in _aiService.generateTextStream(
+        systemPrompt: systemPrompt,
+        userPrompt: userPrompt,
+        maxTokens: 8100,
+        temperature: 0.7,
+      )) {
+        buffer.write(chunk);
+      }
 
-    final reviewedContent = buffer.toString();
-    
-    // 检查审查后的内容是否仍有重复
-    if (_cacheService.isContentDuplicate(reviewedContent, [])) {
-      // 如果仍有重复，进行第二轮审查
-      return await reviewContent(
-        content: reviewedContent,
-        style: style,
-        model: model,
-      );
-    }
+      final reviewedContent = buffer.toString();
+      
+      // 检查审查后的内容是否仍有重复
+      if (_cacheService.isContentDuplicate(reviewedContent, [])) {
+        _updateStatus('检测到重复内容，进行第二轮审查...');
+        
+        // 如果仍有重复，进行第二轮审查，使用更强的去重提示
+        final secondRoundPrompt = '''请对以下内容进行更严格的去重处理。要求：
+1. 彻底删除所有重复或相似的段落
+2. 重写任何相似度高的内容
+3. 确保每个段落都是独特的
+4. 保持故事的连贯性和完整性
 
-    // 缓存成功的写作模式
-    if (reviewedContent.length >= 3000) {
-      _cacheService.cacheSuccessfulPattern(style);
-    }
+内容：
+$reviewedContent''';
 
-    return reviewedContent;
+        final secondBuffer = StringBuffer();
+        await for (final chunk in _aiService.generateTextStream(
+          systemPrompt: '''你是一位专业的文学编辑，专门处理文本中的重复内容问题。
+你的任务是彻底删除所有重复的段落，并确保每个段落都是独特的。''',
+          userPrompt: secondRoundPrompt,
+          maxTokens: 8100,
+          temperature: 0.8,
+        )) {
+          secondBuffer.write(chunk);
+        }
+        
+        return secondBuffer.toString();
+      }
+
+      // 缓存成功的写作模式
+      if (reviewedContent.length >= 3000) {
+        _cacheService.cacheSuccessfulPattern(style);
+      }
+
+      return reviewedContent;
+    } catch (e) {
+      _updateStatus('内容审查失败: $e');
+      return '内容审查过程中发生错误: $e';
+    } finally {
+      _isReviewing.value = false;
+    }
   }
 
   Future<List<String>> reviewMultipleChapters({
@@ -115,7 +143,11 @@ $content''';
     required AIModel model,
     String? userRequirements,
   }) async {
-    final systemPrompt = '''你是一位专业的文学编辑，需要对多个连续章节进行整体校对和润色。请注意：
+    try {
+      _isReviewing.value = true;
+      _updateStatus('正在审查多个章节...');
+      
+      final systemPrompt = '''你是一位专业的文学编辑，需要对多个连续章节进行整体校对和润色。请注意：
 
 1. 章节间的连贯性：
    - 情节过渡是否自然
@@ -143,7 +175,7 @@ $content''';
 
 请在保持故事核心的基础上，提升整体的艺术性和连贯性。''';
 
-    String userPrompt = '''请对以下连续章节进行整体校对和润色：
+      String userPrompt = '''请对以下连续章节进行整体校对和润色：
 
 【章节内容】
 ${contents.join('\n\n=== 章节分隔符 ===\n\n')}
@@ -160,19 +192,25 @@ ${userRequirements != null ? '\n【用户特殊要求】\n$userRequirements' : '
 4. 提升整体艺术性
 5. 保持人物塑造的一致性''';
 
-    final buffer = StringBuffer();
-    
-    await for (final chunk in _aiService.generateTextStream(
-      systemPrompt: systemPrompt,
-      userPrompt: userPrompt,
-      maxTokens: 8000,
-      temperature: 0.7,
-    )) {
-      buffer.write(chunk);
-    }
+      final buffer = StringBuffer();
+      
+      await for (final chunk in _aiService.generateTextStream(
+        systemPrompt: systemPrompt,
+        userPrompt: userPrompt,
+        maxTokens: 8000,
+        temperature: 0.7,
+      )) {
+        buffer.write(chunk);
+      }
 
-    // 解析返回的内容，分割成多个章节
-    return _splitReviewedContent(buffer.toString());
+      // 解析返回的内容，分割成多个章节
+      return _splitReviewedContent(buffer.toString());
+    } catch (e) {
+      _updateStatus('多章节审查失败: $e');
+      return ['多章节审查过程中发生错误: $e'];
+    } finally {
+      _isReviewing.value = false;
+    }
   }
 
   List<String> _splitReviewedContent(String content) {
