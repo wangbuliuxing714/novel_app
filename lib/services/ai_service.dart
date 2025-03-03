@@ -566,58 +566,74 @@ class AIService extends GetxService {
   }
 
   Future<String> generateChapterContent(String prompt) async {
+    final completer = Completer<String>();
+    final buffer = StringBuffer();
+    
     try {
-      String response = '';
       await for (final chunk in generateTextStream(
-        systemPrompt: '''作为一个专业的小说创作助手，请遵循以下创作原则：
-
-1. 故事逻辑：
-   - 确保因果关系清晰合理，事件发展有其必然性
-   - 人物行为要符合其性格特征和处境
-   - 情节转折要有铺垫，避免突兀
-   - 矛盾冲突的解决要符合逻辑
-   - 故事背景要前后一致，细节要互相呼应
-
-2. 叙事结构：
-   - 采用灵活多变的叙事手法，避免单一直线式发展
-   - 合理安排伏笔和悬念，让故事更有层次感
-   - 注意时间线的合理性，避免前后矛盾
-   - 场景转换要流畅自然，不生硬突兀
-   - 故事节奏要有张弛，紧凑处突出戏剧性
-
-3. 人物塑造：
-   - 赋予角色丰富的心理活动和独特性格
-   - 人物成长要符合其经历和环境
-   - 人物关系要复杂立体，互动要自然
-   - 对话要体现人物性格和身份特点
-   - 避免脸谱化和类型化的人物描写
-
-4. 环境描写：
-   - 场景描写要与情节和人物情感相呼应
-   - 细节要生动传神，突出关键特征
-   - 环境氛围要配合故事发展
-   - 感官描写要丰富多样
-   - 避免无关的环境描写，保持紧凑
-
-5. 语言表达：
-   - 用词准确生动，避免重复和陈词滥调
-   - 句式灵活多样，富有韵律感
-   - 善用修辞手法，但不过分堆砌
-   - 对话要自然流畅，符合说话人特点
-   - 描写要细腻传神，避免空洞
-
-请基于以上要求，创作出逻辑严密、情节生动、人物丰满的精彩内容。''',
-        userPrompt: prompt,
-        maxTokens: 8000,
-        temperature: 0.8,
+        systemPrompt: prompt,
+        userPrompt: "请根据以上要求生成章节内容",
+        temperature: 0.7,
+        maxTokens: 4000,
       )) {
-        response += chunk;
+        buffer.write(chunk);
       }
-      return response;
+      
+      completer.complete(buffer.toString());
     } catch (e) {
-      print('生成章节内容失败: $e');
-      rethrow;
+      completer.completeError('生成章节内容失败: $e');
     }
+    
+    return completer.future;
+  }
+
+  // 添加生成短篇小说大纲的方法
+  Future<String> generateShortNovelOutline(String prompt) async {
+    final completer = Completer<String>();
+    final buffer = StringBuffer();
+    
+    try {
+      await for (final chunk in generateTextStream(
+        systemPrompt: prompt,
+        userPrompt: "请为我创建一个详细的短篇小说大纲，确保结构完整合理",
+        temperature: 0.7,
+        maxTokens: 3000, // 增加token上限以确保完整的五段式大纲
+        repetitionPenalty: 1.05, // 降低重复惩罚
+      )) {
+        buffer.write(chunk);
+      }
+      
+      completer.complete(buffer.toString());
+    } catch (e) {
+      completer.completeError('生成短篇小说大纲失败: $e');
+    }
+    
+    return completer.future;
+  }
+  
+  // 添加生成短篇小说内容的方法
+  Future<String> generateShortNovelContent(String prompt) async {
+    final completer = Completer<String>();
+    final buffer = StringBuffer();
+    
+    try {
+      await for (final chunk in generateTextStream(
+        systemPrompt: prompt,
+        userPrompt: "请根据以上要求创作一篇高质量的短篇小说内容",
+        temperature: 0.78, // 提高创造性
+        maxTokens: 8000, // 最大token上限
+        repetitionPenalty: 1.0, // 不进行重复惩罚，允许更自然的文学表达
+        topP: 0.95, // 提高多样性
+      )) {
+        buffer.write(chunk);
+      }
+      
+      completer.complete(buffer.toString());
+    } catch (e) {
+      completer.completeError('生成短篇小说内容失败: $e');
+    }
+    
+    return completer.future;
   }
 
   void dispose() {

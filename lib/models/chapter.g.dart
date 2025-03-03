@@ -20,7 +20,7 @@ class ChapterAdapter extends TypeAdapter<Chapter> {
       number: fields[0] as int,
       title: fields[1] as String,
       content: fields[2] as String,
-      createTime: fields[3] as String,
+      createTime: fields[3] as String?,
       id: fields[4] as String?,
       isSelected: fields[5] as bool,
     );

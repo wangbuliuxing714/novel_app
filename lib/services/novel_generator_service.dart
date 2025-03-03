@@ -18,6 +18,12 @@ import 'package:hive/hive.dart';
 import 'package:novel_app/controllers/prompt_package_controller.dart';
 import 'package:novel_app/models/character_card.dart';
 import 'package:novel_app/models/prompt_package.dart';
+import 'dart:math';
+import 'package:novel_app/models/novel_outline.dart';
+import 'package:novel_app/models/character_type.dart';
+import 'package:novel_app/prompts/short_novel_female_prompts.dart';
+import 'package:novel_app/prompts/short_novel_male_prompts.dart';
+import 'dart:math' as math;
 
 class ParagraphInfo {
   final String content;
@@ -78,12 +84,22 @@ class NovelGeneratorService extends GetxService {
   Completer<void>? _pauseCompleter;
   String style = '';
 
+  // 添加新的成员变量
+  late Function(String) _updateRealtimeOutput;
+  late Function(String) _updateGenerationStatus;
+  late Function(double) _updateGenerationProgress;
+
   NovelGeneratorService(
     this._aiService, 
     this._apiConfig, 
     this._cacheService,
     {this.onProgress}
   );
+
+  @override
+  void onInit() {
+    super.onInit();
+  }
 
   // 获取当前生成状态的getter
   int get currentGeneratingChapter => _currentGeneratingChapter.value;
@@ -94,8 +110,11 @@ class NovelGeneratorService extends GetxService {
   String get currentNovelTitle => _currentNovelTitle.value;
   String get currentNovelOutline => _currentNovelOutline.value;
 
-  void _updateProgress(String message) {
-    onProgress?.call(message);
+  void _updateProgress(String status, [double progress = 0.0]) {
+    _updateGenerationStatus(status);
+    if (progress > 0) {
+      _updateGenerationProgress(progress);
+    }
   }
 
   // 在生成章节前检查缓存
@@ -130,9 +149,15 @@ class NovelGeneratorService extends GetxService {
     required int totalChapters,
     void Function(String)? onProgress,
     void Function(String)? onContent,
+    bool isShortNovel = false,
+    int wordCount = 15000,
   }) async {
     try {
-      _updateProgress("正在生成大纲...");
+      if (isShortNovel) {
+        _updateProgress("正在生成短篇小说大纲...");
+      } else {
+        _updateProgress("正在生成大纲...");
+      }
       
       // 获取提示词包内容
       final promptPackageController = Get.find<PromptPackageController>();
@@ -142,12 +167,24 @@ class NovelGeneratorService extends GetxService {
       
       // 根据目标读者选择不同的提示词
       String outlineFormatPrompt = '';
-      if (targetReaders == '女性向') {
-        // 使用女性向提示词
-        outlineFormatPrompt = FemalePrompts.getOutlinePrompt(title, genre, theme, totalChapters);
+      if (isShortNovel) {
+        // 生成短篇小说大纲
+        if (targetReaders == '女性向') {
+          // 使用女性向短篇提示词
+          outlineFormatPrompt = FemalePrompts.getShortNovelOutlinePrompt(title, genre, theme, wordCount);
+        } else {
+          // 默认使用男性向短篇提示词
+          outlineFormatPrompt = MalePrompts.getShortNovelOutlinePrompt(title, genre, theme, wordCount);
+        }
       } else {
-        // 默认使用男性向提示词
-        outlineFormatPrompt = MalePrompts.getOutlinePrompt(title, genre, theme, totalChapters);
+        // 生成长篇小说大纲
+        if (targetReaders == '女性向') {
+          // 使用女性向提示词
+          outlineFormatPrompt = FemalePrompts.getOutlinePrompt(title, genre, theme, totalChapters);
+        } else {
+          // 默认使用男性向提示词
+          outlineFormatPrompt = MalePrompts.getOutlinePrompt(title, genre, theme, totalChapters);
+        }
       }
       
       // 构建提示词
@@ -176,7 +213,11 @@ ${outlineFormatPrompt}
       outlineContent = OutlineGeneration.formatOutline(outlineContent);
       
       if (onProgress != null) {
-        onProgress('已生成完整大纲');
+        if (isShortNovel) {
+          onProgress('短篇小说大纲生成完成');
+        } else {
+          onProgress('大纲生成完成');
+        }
       }
 
       return outlineContent;
@@ -632,146 +673,1201 @@ ${ChapterGeneration.getSystemPrompt(style)}
 
   Future<Novel> generateNovel({
     required String title,
-    required String genre,
-    required String theme,
-    required String targetReaders,
-    required int totalChapters,
-    String background = '',
-    String style = '',
-    List<String>? specialRequirements,
+    required List<String> genres,
+    required String background,
+    required String otherRequirements,
+    required Function(String) updateRealtimeOutput,
+    required Function(String) updateGenerationStatus,
+    required Function(double) updateGenerationProgress,
+    required String style,
+    required String targetReader,
+    int totalChapters = 5,
     bool continueGeneration = false,
-    void Function(String)? onProgress,
-    void Function(String)? onContent,
-    void Function(int, String, String)? onChapterComplete,
+    bool useOutline = false,
+    NovelOutline? outline,
+    List<Chapter>? previousChapters,
+    required bool isShortNovel,
+    int wordCount = 15000,
+    Function(Novel)? onNovelCreated,
+    Map<String, CharacterCard>? characterCards,
+    List<CharacterType>? characterTypes,
   }) async {
-    try {
-      _isGenerating.value = true;
-      _currentNovelTitle.value = title;
+    _updateRealtimeOutput = updateRealtimeOutput;
+    _updateGenerationStatus = updateGenerationStatus;
+    _updateGenerationProgress = updateGenerationProgress;
+    
+    // 记录开始时间
+    final startTime = DateTime.now();
+    
+        if (isShortNovel) {
+      // 确保短篇小说大纲正确显示
+      updateGenerationStatus('正在生成短篇小说大纲...');
+      updateRealtimeOutput('开始生成短篇小说大纲...\n');
       
-      // 清除之前的缓存，确保新的生成过程不受影响
-      if (!continueGeneration) {
-        print('开始新小说生成，清除之前的缓存');
-        clearFailedGenerationCache();
-        _generatedParagraphs.clear();
-      }
-      
-      // 确保回调函数被调用
-      if (onContent != null) {
-        onContent('准备生成小说: $title\n');
-      }
-      
-      // 如果是继续生成，则从上次的进度继续
-      if (continueGeneration) {
-        final progress = await _getLastGenerationProgress(title);
-        if (progress != null) {
-          return await this.continueGeneration(
+      // 生成短篇小说大纲
+      final shortNovelOutline = await _generateShortNovelOutline(
             title: title,
-            genre: genre,
-            theme: theme,
-            targetReaders: targetReaders,
-            totalChapters: totalChapters,
+        genres: genres,
             background: background,
+        otherRequirements: otherRequirements,
             style: style,
-            specialRequirements: specialRequirements,
-            onProgress: onProgress,
-            onContent: onContent,
-            onChapterComplete: onChapterComplete,
-          );
-        }
-      }
-
-      // 生成大纲
-      onProgress?.call('正在生成大纲...');
-      if (onContent != null) {
-        onContent('\n开始生成大纲...\n');
-      }
-      
-      final outline = await generateOutline(
-        title: title,
-        genre: genre,
-        theme: theme,
-        targetReaders: targetReaders,
-        totalChapters: totalChapters,
-        onProgress: onProgress,
-        onContent: onContent,
+        targetReader: targetReader,
+        characterCards: characterCards,
+        characterTypes: characterTypes,
       );
       
-      _currentNovelOutline.value = outline;
+      // 显示大纲信息
+      updateRealtimeOutput('\n========== 短篇小说大纲 ==========\n');
+      updateRealtimeOutput(shortNovelOutline);
+      updateRealtimeOutput('\n================================\n\n');
       
-      // 创建小说对象
+      // 生成短篇小说内容
+      updateGenerationStatus('正在生成短篇小说内容...');
+      updateRealtimeOutput('开始生成短篇小说内容...\n');
+      
+      // 确保生成到指定字数
+      final shortNovelContent = await _generateShortNovelContent(
+          title: title,
+          genres: genres,
+        background: background,
+        otherRequirements: otherRequirements,
+          style: style,
+          targetReader: targetReader,
+        outline: shortNovelOutline,
+        targetWordCount: wordCount, // 使用用户设定的字数
+          characterCards: characterCards,
+          characterTypes: characterTypes,
+      );
+      
+      updateGenerationStatus('短篇小说生成完成！');
       final novel = Novel(
         title: title,
-        genre: genre,
-        outline: outline,
+        genre: genres.join(','),
+        outline: shortNovelOutline,
+        content: shortNovelContent,
+        chapters: [
+          Chapter(
+            number: 1,
+            title: title,
+            content: shortNovelContent,
+          )
+        ],
+        createdAt: DateTime.now(),
+      );
+      
+      // 记录完成时间并计算耗时
+      final endTime = DateTime.now();
+      final duration = endTime.difference(startTime);
+      final minutes = duration.inMinutes;
+      final seconds = duration.inSeconds % 60;
+      
+      updateRealtimeOutput('\n短篇小说生成完成！耗时：$minutes分$seconds秒\n');
+      updateRealtimeOutput('小说总字数：${shortNovelContent.length}字\n');
+      
+      if (onNovelCreated != null) {
+        onNovelCreated(novel);
+      }
+      
+      return novel;
+    } else {
+      // 原有的长篇小说生成逻辑
+      // 创建一个默认小说对象作为返回值
+      Novel novel = Novel(
+          title: title,
+        genre: genres.join(','),
+        outline: '',
         content: '',
         chapters: [],
         createdAt: DateTime.now(),
       );
       
-      // 生成每一章
-      for (var i = 1; i <= totalChapters; i++) {
-        await _checkPause();
-        if (_isPaused.value) {
-          // 保存当前进度
-          await _saveGenerationProgress(
-            title: title,
-            genre: genre,
-            theme: theme,
-            targetReaders: targetReaders,
-            totalChapters: totalChapters,
-            outline: outline,
-            chapters: novel.chapters,
-          );
-          throw Exception('生成已暂停');
+      updateRealtimeOutput('长篇小说生成功能尚未更新，请使用短篇小说模式。\n');
+      updateGenerationStatus('生成结束');
+      
+      // 确保返回非空Novel对象
+      return novel;
+    }
+  }
+
+  // 添加短篇小说大纲生成方法
+  Future<String> _generateShortNovelOutline({
+    required String title,
+    required List<String> genres,
+    required String background,
+    required String otherRequirements,
+    required String style,
+    required String targetReader,
+    Map<String, CharacterCard>? characterCards,
+    List<CharacterType>? characterTypes,
+  }) async {
+    try {
+      // 构建包含角色信息的提示词
+      String characterPrompt = '';
+      if (characterCards != null && characterCards.isNotEmpty && characterTypes != null) {
+        characterPrompt = '小说角色设定：\n';
+        for (final type in characterTypes) {
+          final card = characterCards[type.id];
+          if (card != null) {
+            characterPrompt += '${type.name}：${card.name}\n';
+            if (card.gender != null && card.gender!.isNotEmpty) {
+              characterPrompt += '性别：${card.gender}\n';
+            }
+            if (card.age != null && card.age!.isNotEmpty) {
+              characterPrompt += '年龄：${card.age}\n';
+            }
+            if (card.personalityTraits != null && card.personalityTraits!.isNotEmpty) {
+              characterPrompt += '性格：${card.personalityTraits}\n';
+            }
+            if (card.background != null && card.background!.isNotEmpty) {
+              characterPrompt += '背景：${card.background}\n';
+            }
+            characterPrompt += '\n';
+          }
         }
-        
-        _currentGeneratingChapter.value = i;
-        onProgress?.call('正在生成第$i章...');
-        
-        // 确保回调函数被调用
-        if (onContent != null) {
-          onContent('\n开始生成第$i章...\n');
+      }
+
+      // 获取提示词包内容
+      final promptPackageController = Get.find<PromptPackageController>();
+      final masterPrompt = promptPackageController.getCurrentPromptContent('master');
+      final shortNovelPrompt = promptPackageController.getShortNovelPromptContent('short_novel', targetReader);
+      
+      // 根据目标读者选择不同的提示词
+      String outlineFormatPrompt;
+      String genre = genres.isNotEmpty ? genres.join('、') : '通用';
+      
+      if (targetReader == '女性向') {
+        // 使用新的女性向短篇提示词
+        outlineFormatPrompt = ShortNovelFemalePrompts.getShortNovelOutlinePrompt(title, genre, otherRequirements, 15000);
+      } else {
+        // 使用新的男性向短篇提示词
+        outlineFormatPrompt = ShortNovelMalePrompts.getShortNovelOutlinePrompt(title, genre, otherRequirements, 15000);
+      }
+      
+      // 获取特定角色提示词
+      String characterDesignPrompt = '';
+      if (targetReader == '女性向') {
+        characterDesignPrompt = ShortNovelFemalePrompts.getCharacterPrompt();
+      } else {
+        characterDesignPrompt = ShortNovelMalePrompts.getCharacterPrompt();
+      }
+      
+      // 构建完整提示词
+      final prompt = '''
+${masterPrompt.isNotEmpty ? masterPrompt + '\n\n' : ''}
+${shortNovelPrompt.isNotEmpty ? shortNovelPrompt + '\n\n' : ''}
+
+你是一位优秀的小说创作者，请根据以下要求创作一部短篇小说的详细大纲：
+
+小说标题：$title
+小说类型：${genres.join('，')}
+目标读者：$targetReader
+写作风格：$style
+${background.isNotEmpty ? '背景设定：$background\n' : ''}
+${otherRequirements.isNotEmpty ? '其他要求：$otherRequirements\n' : ''}
+$characterPrompt
+
+$characterDesignPrompt
+
+$outlineFormatPrompt
+
+请直接生成大纲内容，不需要包含解释或说明。
+''';
+
+      // 调用AI服务生成大纲
+      return await _aiService.generateShortNovelOutline(prompt);
+    } catch (e) {
+      _updateProgress("大纲生成失败: $e");
+      rethrow;
+    }
+  }
+
+  // 生成短篇小说内容
+  Future<String> _generateShortNovelContent({
+    required String title,
+    required List<String> genres,
+    required String background,
+    required String otherRequirements,
+    required String style,
+    required String targetReader,
+    required String outline,
+    required int targetWordCount,
+    Map<String, CharacterCard>? characterCards,
+    List<CharacterType>? characterTypes,
+  }) async {
+    // 构建包含角色信息的提示词
+    String characterPrompt = '';
+    if (characterCards != null && characterCards.isNotEmpty && characterTypes != null) {
+      characterPrompt = '小说角色设定：\n';
+      for (final type in characterTypes) {
+        final card = characterCards[type.id];
+        if (card != null) {
+          characterPrompt += '${type.name}：${card.name}\n';
+          if (card.gender != null && card.gender!.isNotEmpty) {
+            characterPrompt += '性别：${card.gender}\n';
+          }
+          if (card.age != null && card.age!.isNotEmpty) {
+            characterPrompt += '年龄：${card.age}\n';
+          }
+          if (card.personalityTraits != null && card.personalityTraits!.isNotEmpty) {
+            characterPrompt += '性格：${card.personalityTraits}\n';
+          }
+          if (card.background != null && card.background!.isNotEmpty) {
+            characterPrompt += '背景：${card.background}\n';
+          }
+          characterPrompt += '\n';
         }
+      }
+    }
+
+    // 获取提示词包内容
+    final promptPackageController = Get.find<PromptPackageController>();
+    final masterPrompt = promptPackageController.getCurrentPromptContent('master');
+    final shortNovelPrompt = promptPackageController.getShortNovelPromptContent('short_novel', targetReader);
+
+    // 首先生成完整结构的框架，确保五部分完整分布
+    final initialOutlinePrompt = '''
+你是一位出色的故事策划者，请根据以下信息创建一个详细的五段式故事结构框架：
+
+小说标题：$title
+小说类型：${genres.join('，')}
+目标读者：$targetReader
+写作风格：$style
+${background.isNotEmpty ? '背景设定：$background\n' : ''}
+${otherRequirements.isNotEmpty ? '其他要求：$otherRequirements\n' : ''}
+$characterPrompt
+
+用户提供的大纲：
+$outline
+
+请创建一个详细的五段式故事框架，包括以下五个部分：
+1. 开篇与背景铺垫（约占15%）
+2. 冲突展开（约占20%）
+3. 情节发展与转折（约占30%）
+4. 高潮与危机（约占20%）
+5. 结局与收尾（约占15%）
+
+每个部分需要包含：
+- 该部分的核心情节发展
+- 重要场景设置
+- 角色互动重点
+- 情感和气氛的变化
+- 与前后部分的自然衔接点
+
+请确保框架的连贯性和完整性，为后续内容创作提供明确指导。
+''';
+
+    // 生成大纲框架
+    _updateRealtimeOutput("正在规划故事结构...\n");
+    final outlineFramework = await _aiService.generateShortNovelContent(initialOutlinePrompt);
+    
+    // 将大纲框架分成五个部分
+    final outlineParts = _divideOutlineIntoFiveParts(outlineFramework);
+    if (outlineParts.length != 5) {
+      _updateRealtimeOutput("\n故事结构划分不正确，重新调整...\n");
+      return await _generateShortNovelContent(
+        title: title,
+        genres: genres,
+        background: background,
+        otherRequirements: otherRequirements,
+        style: style,
+        targetReader: targetReader,
+        outline: outline,
+        targetWordCount: targetWordCount,
+        characterCards: characterCards,
+        characterTypes: characterTypes,
+      );
+    }
+    
+    // 计算每个部分的目标字数
+    final partWordCounts = [
+      (targetWordCount * 0.15).round(), // 开篇与背景铺垫
+      (targetWordCount * 0.20).round(), // 冲突展开
+      (targetWordCount * 0.30).round(), // 情节发展与转折
+      (targetWordCount * 0.20).round(), // 高潮与危机
+      (targetWordCount * 0.15).round(), // 结局与收尾
+    ];
+    
+    // 依次生成每个部分的内容
+    String fullContent = '';
+    
+    for (int i = 0; i < 5; i++) {
+      final partTitle = _getPartTitle(i);
+      _updateRealtimeOutput("\n正在创作 ${i+1}/5：$partTitle...\n");
+      
+      // 构建连续性上下文
+      String continuityContext = '';
+      
+      if (i > 0) {
+        // 如果不是第一部分，提供前文内容摘要
+        final previousContent = fullContent.length > 500 
+          ? fullContent.substring(fullContent.length - 500) + '...' 
+          : fullContent;
         
-        final chapter = await generateChapter(
-          title: title,
-          number: i,
-          outline: outline,
-          previousChapters: novel.chapters,
-          totalChapters: totalChapters,
-          genre: genre,
-          theme: theme,
-          targetReaders: targetReaders,
-          onProgress: onProgress,
-          onContent: onContent,
+        continuityContext = '''
+前文内容概要：
+${previousContent.isNotEmpty ? previousContent : "故事尚未开始"}
+
+前一部分（${_getPartTitle(i-1)}）的结尾内容：
+${fullContent.isNotEmpty ? (fullContent.length > 300 ? fullContent.substring(fullContent.length - 300) : fullContent) : "故事尚未开始"}
+
+请确保本部分与前文的自然衔接。
+''';
+      }
+      
+      if (i < 4) {
+        // 如果不是最后部分，提供下一部分的预期走向
+        continuityContext += '''
+下一部分（${_getPartTitle(i+1)}）的内容概要：
+${outlineParts[i+1].length > 300 ? outlineParts[i+1].substring(0, 300) + '...' : outlineParts[i+1]}
+
+请确保本部分结尾能够自然引导至下一部分的开始。
+''';
+      }
+      
+      // 构建部分提示词
+      String partPrompt;
+      String genre = genres.isNotEmpty ? genres.join('，') : '通用';
+      bool isFirstPart = (i == 0);
+      bool isLastPart = (i == 4);
+      
+      if (targetReader == '女性向') {
+        partPrompt = ShortNovelFemalePrompts.getShortNovelPartPrompt(
+          title,
+          genre,
+          partTitle,
+          outlineParts[i],
+          i > 0 ? fullContent.substring(math.max(0, fullContent.length - 500)) : "",
+          i < 4 ? outlineParts[i+1] : "",
+          partWordCounts[i],
+          isFirstPart,
+          isLastPart
         );
-        
-        novel.chapters.add(chapter);
-        
-        // 通知章节完成
-        onChapterComplete?.call(i, chapter.title, chapter.content);
-        
-        // 保存当前进度
-        await _saveGenerationProgress(
-          title: title,
-          genre: genre,
-          theme: theme,
-          targetReaders: targetReaders,
-          totalChapters: totalChapters,
-          outline: outline,
-          chapters: novel.chapters,
+      } else {
+        partPrompt = ShortNovelMalePrompts.getShortNovelPartPrompt(
+          title,
+          genre,
+          partTitle,
+          outlineParts[i],
+          i > 0 ? fullContent.substring(math.max(0, fullContent.length - 500)) : "",
+          i < 4 ? outlineParts[i+1] : "",
+          partWordCounts[i],
+          isFirstPart,
+          isLastPart
         );
       }
       
-      // 生成完成后清除进度
-      await clearGenerationProgress();
-      _isGenerating.value = false;
-      return novel;
-    } catch (e) {
-      _lastError.value = e.toString();
-      print('生成小说失败: $e');
-      rethrow;
+      // 完整的部分生成提示词
+      final fullPartPrompt = '''
+${masterPrompt.isNotEmpty ? masterPrompt + '\n\n' : ''}
+${shortNovelPrompt.isNotEmpty ? shortNovelPrompt + '\n\n' : ''}
+
+$partPrompt
+''';
+      
+      // 生成这部分的内容
+      final partContent = await _aiService.generateShortNovelContent(fullPartPrompt);
+      
+      // 添加到完整内容中
+      if (i > 0) {
+        fullContent += "\n\n" + partContent;
+      } else {
+        fullContent = partContent;
+      }
+      
+      // 更新进度
+      _updateProgress("正在创作 ${i+1}/5：$partTitle");
     }
+    
+    // 检查最终字数
+    final currentWordCount = fullContent.length;
+    _updateRealtimeOutput("\n内容生成完成，当前字数：$currentWordCount\n");
+    
+    if (currentWordCount < targetWordCount * 0.9) {
+      _updateRealtimeOutput("字数不足目标（$targetWordCount），正在增强内容...\n");
+      fullContent = await _enhanceContentToMeetWordCount(
+        fullContent, 
+        targetWordCount,
+        title,
+        style
+      );
+    }
+    
+    return fullContent;
+  }
+
+  // 新增：判断两段内容是否需要过渡段落
+  bool _needsTransition(String firstContent, String secondContent) {
+    // 提取第一段内容的最后一个段落
+    final lastParagraph = _getLastParagraph(firstContent);
+    
+    // 提取第二段内容的第一个段落
+    final firstParagraph = _getFirstParagraph(secondContent);
+    
+    // 检查时间连续性
+    final timeJumpIndicators = ['第二天', '一周后', '几天后', '几个月后', '几年后', '转眼'];
+    for (final indicator in timeJumpIndicators) {
+      if (firstParagraph.contains(indicator)) {
+        return false; // 已有明确的时间转换，不需要额外过渡
+      }
+    }
+    
+    // 检查场景转换
+    if (lastParagraph.contains('离开') || lastParagraph.contains('走出') || 
+        lastParagraph.contains('告别') || lastParagraph.contains('结束')) {
+      return true; // 可能需要场景转换过渡
+    }
+    
+    // 检查人物变化
+    final lastCharacters = _extractCharacters(lastParagraph);
+    final firstCharacters = _extractCharacters(firstParagraph);
+    
+    // 如果主要人物完全不同，可能需要过渡
+    if (lastCharacters.isNotEmpty && firstCharacters.isNotEmpty && 
+        !lastCharacters.any((c) => firstCharacters.contains(c))) {
+      return true;
+    }
+    
+    // 默认判断:如果结尾和开头都是对话或都不是对话，可能更自然
+    final lastIsDialogue = lastParagraph.trim().startsWith('"') || lastParagraph.trim().startsWith('"');
+    final firstIsDialogue = firstParagraph.trim().startsWith('"') || firstParagraph.trim().startsWith('"');
+    
+    return lastIsDialogue != firstIsDialogue;
+  }
+  
+  // 新增：多层次内容扩充策略
+  Future<String> _enhanceContentWithMultiLevelStrategy(
+    String content, 
+    int targetWordCount,
+    String title,
+    String style,
+    List<String> outlineParts
+  ) async {
+    // 当前字数
+    final currentWordCount = content.length;
+    final neededWords = targetWordCount - currentWordCount;
+    
+    // 如果差距相对较小，使用整体扩充
+    if (neededWords < targetWordCount * 0.15) {
+      return await _enhanceContentToMeetWordCount(
+        content, 
+        targetWordCount,
+        title,
+        style
+      );
+    }
+    
+    // 将内容分成五个部分进行针对性扩充
+    final contentParts = _divideContentIntoFiveParts(content);
+    
+    // 检查每个部分的长度与目标比例
+    final idealPartSizes = [
+      targetWordCount * 0.18, // 第一部分 18%
+      targetWordCount * 0.22, // 第二部分 22%
+      targetWordCount * 0.28, // 第三部分 28%
+      targetWordCount * 0.22, // 第四部分 22%
+      targetWordCount * 0.10, // 第五部分 10%
+    ];
+    
+    // 找出差距最大的部分优先扩充
+    List<int> expansionPriority = List.generate(5, (i) => i);
+    expansionPriority.sort((a, b) {
+      final gapA = idealPartSizes[a] - contentParts[a].length;
+      final gapB = idealPartSizes[b] - contentParts[b].length;
+      return gapB.compareTo(gapA); // 降序排列
+    });
+    
+    String enhancedContent = '';
+    
+    // 按优先级扩充内容
+    for (int partIndex in expansionPriority) {
+      if (enhancedContent.length >= targetWordCount) break;
+      
+      final partTitle = _getPartTitle(partIndex);
+      final partOutline = outlineParts[partIndex];
+      final currentPart = contentParts[partIndex];
+      final targetPartSize = idealPartSizes[partIndex].round();
+      
+      // 如果这部分明显偏短，进行重点扩充
+      if (currentPart.length < targetPartSize * 0.8) {
+        _updateRealtimeOutput("\n第${partIndex+1}部分（$partTitle）明显偏短，进行重点扩充...\n");
+        
+        // 计算前后文上下文
+        String previousContext = '';
+        String nextContext = '';
+        
+        if (partIndex > 0) {
+          previousContext = _getLastParagraph(
+            partIndex > 0 ? contentParts[partIndex - 1] : '', 
+            3
+          );
+        }
+        
+        if (partIndex < 4) {
+          nextContext = _getFirstParagraph(
+            partIndex < 4 ? contentParts[partIndex + 1] : '',
+            3
+          );
+        }
+        
+        // 区域扩充提示词
+        final partEnhancePrompt = '''
+请对短篇小说"$title"的第${partIndex+1}部分（$partTitle）进行有针对性的扩充和丰富，使这部分从当前的${currentPart.length}字增加到约${targetPartSize}字：
+
+原有内容：
+$currentPart
+
+${previousContext.isNotEmpty ? '前文末尾：\n$previousContext\n' : ''}
+${nextContext.isNotEmpty ? '后文开头：\n$nextContext\n' : ''}
+
+该部分应该包含的要点（来自大纲）：
+$partOutline
+
+扩充要求：
+1. 保持与原有情节的连贯性，同时丰富细节和深度
+2. 增加该部分特有的情感变化和情节深化
+3. 增强人物形象塑造和互动场景
+4. 保持"$style"的写作风格
+5. 确保与前后文的自然衔接
+6. ${partIndex == 0 ? '强化开篇的吸引力和情境构建' : 
+     partIndex == 4 ? '完善结局，确保故事有合理完整的收束' :
+     partIndex == 2 ? '加强情节转折的戏剧性和深度' :
+     '丰富情节和冲突，增强读者代入感'}
+
+请返回完整扩充后的这部分内容：
+''';
+
+        final enhancedPart = await _aiService.generateShortNovelContent(partEnhancePrompt);
+        
+        // 替换到原内容中
+        contentParts[partIndex] = enhancedPart;
+      }
+    }
+    
+    // 重新组合完整内容
+    enhancedContent = contentParts.join("\n\n");
+    
+    // 如果字数仍然不足，进行第二轮一般性扩充
+    if (enhancedContent.length < targetWordCount * 0.9) {
+      _updateRealtimeOutput("\n经过重点扩充后字数仍不足，进行整体增强...\n");
+      enhancedContent = await _enhanceContentToMeetWordCount(
+        enhancedContent, 
+        targetWordCount,
+        title,
+        style
+      );
+    }
+    
+    return enhancedContent;
+  }
+  
+  // 新增：将内容分成五个部分
+  List<String> _divideContentIntoFiveParts(String content) {
+    final List<String> result = List.filled(5, '');
+    
+    // 尝试通过部分标题定位
+    final partTitles = [
+      "开篇与背景铺垫", "冲突展开", "情节发展与转折", "高潮与危机", "结局与收尾"
+    ];
+    
+    final Map<String, int> titlePositions = {};
+    
+    // 寻找标题位置
+    for (int i = 0; i < partTitles.length; i++) {
+      final title = partTitles[i];
+      int position = content.indexOf(title);
+      
+      // 如果找不到完整标题，尝试简化版本
+      if (position < 0) {
+        position = content.indexOf(title.replaceAll("与", ""));
+      }
+      
+      if (position >= 0) {
+        titlePositions[title] = position;
+      }
+    }
+    
+    // 如果找到至少两个标题位置，可以进行划分
+    if (titlePositions.length >= 2) {
+      final sortedPositions = titlePositions.entries.toList()
+        ..sort((a, b) => a.value.compareTo(b.value));
+      
+      // 划分内容
+      for (int i = 0; i < sortedPositions.length; i++) {
+        final startPos = sortedPositions[i].value;
+        final endPos = i < sortedPositions.length - 1 ? 
+                      sortedPositions[i + 1].value : 
+                      content.length;
+        
+        // 找到对应的部分索引
+        final titleIndex = partTitles.indexOf(sortedPositions[i].key);
+        if (titleIndex >= 0) {
+          result[titleIndex] = content.substring(startPos, endPos).trim();
+        }
+      }
+      
+      // 填充未找到的部分
+      for (int i = 0; i < result.length; i++) {
+        if (result[i].isEmpty && i > 0 && i < result.length - 1) {
+          // 如果中间部分缺失，尝试从前后推断
+          int prevFoundIndex = i - 1;
+          while (prevFoundIndex >= 0 && result[prevFoundIndex].isEmpty) {
+            prevFoundIndex--;
+          }
+          
+          int nextFoundIndex = i + 1;
+          while (nextFoundIndex < result.length && result[nextFoundIndex].isEmpty) {
+            nextFoundIndex++;
+          }
+          
+          if (prevFoundIndex >= 0 && nextFoundIndex < result.length) {
+            // 找到前后都有内容的部分，按比例分配中间区域
+            // 这里简化处理，实际应用可能需要更复杂的逻辑
+            result[i] = "该部分内容与其他部分混合，无法清晰区分";
+          }
+        }
+      }
+      
+      return result;
+    }
+    
+    // 回退策略：如果无法通过标题划分，按段落比例划分
+    final paragraphs = content.split('\n\n');
+    
+    if (paragraphs.length >= 5) {
+      final segmentLengths = [
+        (paragraphs.length * 0.18).ceil(),
+        (paragraphs.length * 0.22).ceil(),
+        (paragraphs.length * 0.28).ceil(),
+        (paragraphs.length * 0.22).ceil(),
+        paragraphs.length - 
+          (paragraphs.length * 0.18).ceil() - 
+          (paragraphs.length * 0.22).ceil() - 
+          (paragraphs.length * 0.28).ceil() - 
+          (paragraphs.length * 0.22).ceil()
+      ];
+      
+      int currentIndex = 0;
+      for (int i = 0; i < 5; i++) {
+        final endIndex = math.min(currentIndex + segmentLengths[i], paragraphs.length);
+        result[i] = paragraphs.sublist(currentIndex, endIndex).join('\n\n');
+        currentIndex = endIndex;
+      }
+      
+      return result;
+    }
+    
+    // 最后的回退：简单平均分配
+    final charPerPart = content.length ~/ 5;
+    for (int i = 0; i < 5; i++) {
+      final startPos = i * charPerPart;
+      final endPos = i < 4 ? (i + 1) * charPerPart : content.length;
+      
+      if (startPos < content.length) {
+        result[i] = content.substring(startPos, math.min(endPos, content.length));
+      }
+    }
+    
+    return result;
+  }
+  
+  // 辅助方法：提取段落中的人物
+  List<String> _extractCharacters(String paragraph) {
+    final List<String> characters = [];
+    final namePattern = RegExp(r'([A-Z][a-z]+|[\u4e00-\u9fa5]{1,3})(?=说道|回答|问道|喊道|叹道|笑道|看着|走向|站在|坐在|对|和|与|、)');
+    
+    for (final match in namePattern.allMatches(paragraph)) {
+      final name = match.group(1);
+      if (name != null && name.length >= 1 && !characters.contains(name)) {
+        characters.add(name);
+      }
+    }
+    
+    return characters;
+  }
+  
+  // 辅助方法：获取内容的最后几个段落
+  String _getLastParagraph(String content, [int paragraphCount = 1]) {
+    if (content.isEmpty) return '';
+    
+    final paragraphs = content.split('\n\n');
+    if (paragraphs.isEmpty) return '';
+    
+    final count = math.min(paragraphCount, paragraphs.length);
+    return paragraphs.sublist(paragraphs.length - count).join('\n\n');
+  }
+  
+  // 辅助方法：获取内容的前几个段落
+  String _getFirstParagraph(String content, [int paragraphCount = 1]) {
+    if (content.isEmpty) return '';
+    
+    final paragraphs = content.split('\n\n');
+    if (paragraphs.isEmpty) return '';
+    
+    final count = math.min(paragraphCount, paragraphs.length);
+    return paragraphs.take(count).join('\n\n');
+  }
+  
+  // 辅助方法：生成内容摘要
+  String _generateContentSummary(String content, int maxLength) {
+    if (content.length <= maxLength) return content;
+    
+    // 简单方法：提取关键段落
+    final paragraphs = content.split('\n\n');
+    
+    // 如果段落较少，直接取前几段
+    if (paragraphs.length <= 5) {
+      String summary = paragraphs.take(3).join('\n\n');
+      if (summary.length > maxLength) {
+        summary = summary.substring(0, maxLength) + '...';
+      }
+      return summary;
+    }
+    
+    // 尝试提取更有代表性的段落：开头、结尾和中间的一段
+    String summary = paragraphs.first + '\n\n' +
+                    paragraphs[paragraphs.length ~/ 2] + '\n\n' +
+                    paragraphs.last;
+    
+    if (summary.length > maxLength) {
+      summary = summary.substring(0, maxLength) + '...';
+    }
+    
+    return summary;
+  }
+
+  // 解析五段式大纲，返回五个部分的内容
+  List<String> _parseFivePartOutline(String outline) {
+    List<String> parts = [];
+    
+    // 尝试按"第X部分"或"X部分"或"第X部分 - "等格式分割大纲
+    final partPatterns = [
+      RegExp(r'第一部分[\s\-：:]*.*?(?=第二部分|$)', dotAll: true),
+      RegExp(r'第二部分[\s\-：:]*.*?(?=第三部分|$)', dotAll: true),
+      RegExp(r'第三部分[\s\-：:]*.*?(?=第四部分|$)', dotAll: true),
+      RegExp(r'第四部分[\s\-：:]*.*?(?=第五部分|$)', dotAll: true),
+      RegExp(r'第五部分[\s\-：:]*.*', dotAll: true),
+    ];
+    
+    for (var pattern in partPatterns) {
+      final match = pattern.firstMatch(outline);
+      if (match != null) {
+        var part = match.group(0) ?? '';
+        // 清理部分标题，只保留内容
+        part = part.replaceFirst(RegExp(r'^第[一二三四五]部分[\s\-：:]*[^\n]*\n'), '').trim();
+        parts.add(part);
+      } else {
+        // 如果找不到匹配，添加空字符串作为占位符
+        parts.add('');
+      }
+    }
+    
+    // 如果解析失败（有空部分），尝试按比例等分大纲
+    if (parts.contains('')) {
+      parts = [];
+      final lines = outline.split('\n');
+      
+      // 计算每部分的行数
+      final linesPerPart = (lines.length / 5).ceil();
+      
+      for (int i = 0; i < 5; i++) {
+        final startIndex = i * linesPerPart;
+        final endIndex = math.min((i + 1) * linesPerPart, lines.length);
+        if (startIndex < lines.length) {
+          parts.add(lines.sublist(startIndex, endIndex).join('\n'));
+        } else {
+          parts.add('');
+        }
+      }
+    }
+    
+    return parts;
+  }
+
+  // 获取部分标题
+  String _getPartTitle(int partIndex) {
+    switch (partIndex) {
+      case 0: return "开篇与背景铺垫";
+      case 1: return "冲突展开";
+      case 2: return "情节发展与转折";
+      case 3: return "高潮与危机";
+      case 4: return "结局与收尾";
+      default: return "部分${partIndex + 1}";
+    }
+  }
+
+  // 生成简短摘要
+  String _generateBriefSummary(String content) {
+    if (content.length <= 300) {
+      return content;
+    }
+    
+    // 提取最后300个字作为摘要基础
+    final lastPortion = content.substring(content.length - 300);
+    
+    // 找到完整段落的开始
+    final paragraphStart = lastPortion.indexOf('\n\n');
+    if (paragraphStart > 0) {
+      return lastPortion.substring(paragraphStart + 2);
+    }
+    
+    // 如果找不到段落标记，直接返回最后部分
+    return lastPortion;
+  }
+  
+  // 增强内容以达到目标字数
+  Future<String> _enhanceContentToMeetWordCount(
+    String content, 
+    int targetWordCount,
+    String title,
+    String style
+  ) async {
+    // 计算需要增加的字数
+    final currentWordCount = content.length;
+    final neededWords = targetWordCount - currentWordCount;
+    
+    // 如果差距不大，直接进行简单增强
+    if (neededWords < targetWordCount * 0.2) {
+      final enhancePrompt = '''
+请对以下短篇小说进行细节丰富，增加描写，使总字数从当前的${currentWordCount}字增加到约${targetWordCount}字：
+
+小说标题：$title
+写作风格：$style
+
+原小说内容：
+$content
+
+请通过以下方式增强内容：
+1. 增加环境和场景的描写
+2. 丰富人物动作和心理活动
+3. 适当增加有意义的对话
+4. 加入更多感官细节
+5. 保持原有情节不变，只做扩充不做改变
+
+请返回完整的增强后的小说内容。
+''';
+
+      return await _aiService.generateShortNovelContent(enhancePrompt);
+    } 
+    // 如果差距较大，需要更结构化的增强
+    else {
+      // 将内容分成5个部分
+      final contentParts = _divideContentIntoParts(content, 5);
+      String enhancedContent = '';
+      
+      // 逐部分增强
+      for (int i = 0; i < contentParts.length; i++) {
+        // 计算这部分需要增加的字数
+        final partEnhanceTarget = (neededWords / contentParts.length).round();
+        final targetPartLength = contentParts[i].length + partEnhanceTarget;
+        
+        final partEnhancePrompt = '''
+请对短篇小说的第${i+1}部分进行细节丰富和内容扩展，使这部分从当前的${contentParts[i].length}字增加到约${targetPartLength}字：
+
+小说标题：$title
+写作风格：$style
+
+当前第${i+1}部分内容：
+${contentParts[i]}
+
+请通过以下方式对这部分进行增强：
+1. 增加环境和场景的描写
+2. 丰富人物动作和心理活动
+3. 适当增加有意义的对话
+4. 加入更多感官细节
+5. 增加转场和过渡段落
+6. 保持原有情节不变，只做扩充
+
+请返回完整的增强后的这部分内容。
+''';
+
+        final enhancedPart = await _aiService.generateShortNovelContent(partEnhancePrompt);
+        
+        if (i > 0) {
+          enhancedContent += "\n\n" + enhancedPart;
+        } else {
+          enhancedContent = enhancedPart;
+        }
+        
+        _updateRealtimeOutput("\n第${i+1}部分内容已增强，当前总字数：${enhancedContent.length}字\n");
+      }
+      
+      return enhancedContent;
+    }
+  }
+  
+  // 将内容均匀分成指定数量的部分
+  List<String> _divideContentIntoParts(String content, int numParts) {
+    final paragraphs = content.split('\n\n');
+    final List<String> parts = [];
+    
+    // 如果段落太少，无法有效分割
+    if (paragraphs.length < numParts * 2) {
+      // 尝试按字符均分
+      final charsPerPart = (content.length / numParts).ceil();
+      
+      for (int i = 0; i < numParts; i++) {
+        final startIndex = i * charsPerPart;
+        if (startIndex < content.length) {
+          final endIndex = math.min((i + 1) * charsPerPart, content.length);
+          
+          // 尝试在句子边界分割
+          int adjustedEnd = endIndex;
+          if (endIndex < content.length) {
+            final nextPeriod = content.indexOf('。', endIndex);
+            final nextQuestion = content.indexOf('？', endIndex);
+            final nextExclamation = content.indexOf('！', endIndex);
+            
+            // 找到最近的句子结束符
+            if (nextPeriod > 0 && (nextQuestion < 0 || nextPeriod < nextQuestion) 
+                && (nextExclamation < 0 || nextPeriod < nextExclamation)) {
+              adjustedEnd = nextPeriod + 1;
+            } else if (nextQuestion > 0 && (nextExclamation < 0 || nextQuestion < nextExclamation)) {
+              adjustedEnd = nextQuestion + 1;
+            } else if (nextExclamation > 0) {
+              adjustedEnd = nextExclamation + 1;
+            }
+          }
+          
+          parts.add(content.substring(startIndex, adjustedEnd));
+        } else {
+          parts.add('');
+        }
+      }
+      
+      return parts;
+    }
+    
+    // 计算每部分的段落数
+    final paragraphsPerPart = (paragraphs.length / numParts).ceil();
+    
+    for (int i = 0; i < numParts; i++) {
+      final startIndex = i * paragraphsPerPart;
+      if (startIndex < paragraphs.length) {
+        final endIndex = math.min((i + 1) * paragraphsPerPart, paragraphs.length);
+        parts.add(paragraphs.sublist(startIndex, endIndex).join('\n\n'));
+      } else {
+        parts.add('');
+      }
+    }
+    
+    return parts;
+  }
+  
+  // 备选方法：在无法解析五段式大纲时直接生成完整内容
+  Future<String> _generateFullStoryDirectly({
+    required String title,
+    required List<String> genres,
+    required String background,
+    required String otherRequirements,
+    required String style,
+    required String targetReader,
+    required String outline,
+    required int targetWordCount,
+    required String characterPrompt,
+  }) async {
+    _updateRealtimeOutput("使用直接生成方式创作完整小说...\n");
+    
+    final initialPrompt = '''
+你是一位优秀的短篇小说创作者。请根据以下大纲和要求，创作一篇完整的短篇小说：
+
+小说标题：$title
+小说类型：${genres.join('，')}
+目标读者：$targetReader
+写作风格：$style
+${background.isNotEmpty ? '背景设定：$background\n' : ''}
+${otherRequirements.isNotEmpty ? '其他要求：$otherRequirements\n' : ''}
+$characterPrompt
+
+大纲：
+$outline
+
+重要要求：
+1. 请创作一篇结构完整的短篇小说，必须包含五个部分：开篇与背景铺垫、冲突展开、情节发展与转折、高潮与危机、结局与收尾
+2. 小说总字数必须达到$targetWordCount字，每个部分要占适当比例
+3. 请严格按照提供的大纲进行创作，确保所有情节点都有展开
+4. 文风要符合"$style"的风格要求
+5. 确保故事连贯、情节丰富、人物鲜活
+6. 不要过早结束故事，确保内容丰满达到要求字数
+7. 保证故事的连贯性，避免前后文脱节
+
+请现在开始创作完整的短篇小说内容：
+''';
+
+    String content = await _aiService.generateShortNovelContent(initialPrompt);
+    
+    // 检查字数是否达到要求
+    if (content.length < targetWordCount * 0.9) {
+      _updateRealtimeOutput("\n当前字数不足(${content.length}/$targetWordCount)，需要增加内容...\n");
+      
+      // 增强内容以达到目标字数
+      content = await _enhanceContentToMeetWordCount(
+        content, 
+        targetWordCount,
+        title,
+        style
+      );
+    }
+    
+    return content;
+  }
+
+  // 辅助方法：检测故事是否已有结局
+  bool _detectStoryEnding(String content) {
+    // 检查是否已经完整生成了五个部分
+    bool hasFiveParts = true;
+    
+    // 检查五段式特征标记
+    final partTitles = [
+      "开篇与背景铺垫", "冲突展开", "情节发展与转折", "高潮与危机", "结局与收尾"
+    ];
+    
+    for (var title in partTitles) {
+      if (!content.contains(title) && !content.contains(title.replaceAll("与", ""))) {
+        hasFiveParts = false;
+        break;
+      }
+    }
+    
+    if (hasFiveParts) {
+      return true; // 如果找到了所有五个部分的标记，认为故事完整
+    }
+    
+    // 分析故事内容，检测是否已经有结局的迹象
+    // 这里使用简单的启发式方法，检查最后10%的内容是否包含表示结局的关键词
+    final lastPortion = content.length > 300 ? 
+        content.substring(content.length - content.length ~/ 10) : content;
+    
+    final endingKeywords = [
+      '结束', '完成', '终于', '最后', '从此', '永远', '这一天', 
+      '余生', '未来', '新的开始', '告别', '道别', '终章', '结局',
+      '最终', '一切都', '回到了', '结婚', '离开', '幸福地', '快乐地',
+      '就这样', '后来', '多年后', '岁月', '随着时间', '走到了尽头'
+    ];
+    
+    // 检查是否包含表示结局的段落标志
+    if (lastPortion.contains('全剧终') || 
+        lastPortion.contains('全文完') || 
+        lastPortion.contains('—— 完 ——') ||
+        lastPortion.contains('——完——') ||
+        lastPortion.contains('（完）') ||
+        lastPortion.contains('(完)') ||
+        lastPortion.contains('END')) {
+      return true;
+    }
+    
+    // 检查是否包含结局关键词
+    int keywordCount = 0;
+    for (final keyword in endingKeywords) {
+      if (lastPortion.contains(keyword)) {
+        keywordCount++;
+      }
+      
+      // 如果包含3个以上的结局关键词，认为故事已有结局
+      if (keywordCount >= 3) {
+        return true;
+      }
+    }
+    
+    // 检查内容长度，如果已经接近或超过目标字数，也认为故事基本完整
+    // 这个检查在五段式结构下作为辅助判断
+    if (content.length >= 13000) { // 通常目标是15000字，达到13000字已经接近完成
+      return true;
+    }
+    
+    return false;
+  }
+  
+  // 辅助方法：将故事划分为开头、中间和结尾三部分
+  Map<String, String> _divideStoryIntoParts(String content) {
+    // 尝试定位五段式结构的分界点
+    final partTitles = [
+      "开篇与背景铺垫", "冲突展开", "情节发展与转折", "高潮与危机", "结局与收尾"
+    ];
+    
+    final Map<String, int> partPositions = {};
+    
+    // 尝试找到各部分的位置
+    for (final title in partTitles) {
+      final titlePos = content.indexOf(title);
+      if (titlePos > 0) {
+        partPositions[title] = titlePos;
+      } else {
+        // 尝试不带"与"的变体
+        final altTitle = title.replaceAll("与", "");
+        final altPos = content.indexOf(altTitle);
+        if (altPos > 0) {
+          partPositions[title] = altPos;
+        }
+      }
+    }
+    
+    // 如果找到了至少三个部分位置，按五段式划分
+    if (partPositions.length >= 3) {
+      final sortedPositions = partPositions.entries.toList()
+        ..sort((a, b) => a.value.compareTo(b.value));
+      
+      // 按部分名称分类存储
+      final Map<String, String> result = {};
+      
+      // 处理开头部分
+      final beginningTitle = sortedPositions.first.key;
+      final beginningStart = sortedPositions.first.value;
+      int beginningEnd = content.length;
+      
+      if (sortedPositions.length > 1) {
+        beginningEnd = sortedPositions[1].value;
+      }
+      
+      result['beginning'] = content.substring(0, beginningEnd);
+      
+      // 处理中间部分
+      if (sortedPositions.length >= 3) {
+        // 如果有3个以上部分，中间部分是第2到倒数第2
+        final middleStart = sortedPositions[1].value;
+        final middleEnd = sortedPositions[sortedPositions.length - 2].value;
+        result['middle'] = content.substring(middleStart, middleEnd);
+      } else if (sortedPositions.length == 2) {
+        // 如果只有2个部分，第2部分当作中间
+        result['middle'] = content.substring(sortedPositions[1].value);
+      } else {
+        result['middle'] = '';
+      }
+      
+      // 处理结尾部分
+      if (sortedPositions.length >= 2) {
+        final endingTitle = sortedPositions.last.key;
+        final endingStart = sortedPositions.last.value;
+        result['ending'] = content.substring(endingStart);
+      } else {
+        result['ending'] = '';
+      }
+      
+      return result;
+    }
+    
+    // 如果无法按五段式划分，回退到按比例划分
+    final paragraphs = content.split('\n\n');
+    
+    // 如果段落太少，无法有效划分
+    if (paragraphs.length < 6) {
+      final middleIndex = paragraphs.length ~/ 2;
+      return {
+        'beginning': paragraphs.take(1).join('\n\n') + '\n\n',
+        'middle': paragraphs.sublist(1, paragraphs.length - 1).join('\n\n') + '\n\n',
+        'ending': paragraphs.last
+      };
+    }
+    
+    // 将故事分为前20%、中间60%和后20%
+    final beginningCount = (paragraphs.length * 0.2).ceil();
+    final endingCount = (paragraphs.length * 0.2).ceil();
+    final middleCount = paragraphs.length - beginningCount - endingCount;
+    
+    return {
+      'beginning': paragraphs.take(beginningCount).join('\n\n') + '\n\n',
+      'middle': paragraphs.sublist(beginningCount, beginningCount + middleCount).join('\n\n') + '\n\n',
+      'ending': paragraphs.sublist(paragraphs.length - endingCount).join('\n\n')
+    };
   }
 
   // 解析大纲,提取每章节的具体要求
@@ -1329,6 +2425,8 @@ $paragraph
     void Function(String)? onProgress,
     void Function(String)? onContent,
     void Function(int, String, String)? onChapterComplete,
+    bool isShortNovel = false,
+    int wordCount = 15000,
   }) async {
     final progress = await _getLastGenerationProgress(title);
     if (progress == null) {
@@ -1516,10 +2614,70 @@ $paragraph
   String _extractChapterTitle(String content, int number) {
     // 尝试匹配"第X章：标题"或"第X章 标题"格式
     final RegExp titleRegex = RegExp(r'第' + number.toString() + r'章[：\s]+(.*?)[\n\r]');
-    final match = titleRegex.firstMatch(content ?? '');
+    final match = titleRegex.firstMatch(content);
     if (match != null && match.groupCount >= 1) {
       return match.group(1) ?? '第$number章';
     }
     return '第$number章';
+  }
+
+  /// 将大纲分成五个部分
+  List<String> _divideOutlineIntoFiveParts(String outline) {
+    // 尝试根据段落或明确的章节分隔符来分割大纲
+    final parts = <String>[];
+    
+    // 首先检查是否已经有明确的五部分结构
+    final sectionMatches = RegExp(r'[A-E][.、][\s\S]*?(?=[A-E][.、]|$)').allMatches(outline);
+    if (sectionMatches.length >= 5) {
+      for (final match in sectionMatches.take(5)) {
+        parts.add(match.group(0)!.trim());
+      }
+      return parts;
+    }
+    
+    // 尝试按数字标题分割
+    final numberMatches = RegExp(r'\d+[.、][\s\S]*?(?=\d+[.、]|$)').allMatches(outline);
+    if (numberMatches.length >= 5) {
+      final allParts = numberMatches.map((m) => m.group(0)!.trim()).toList();
+      
+      // 将所有部分平均分配到五个部分中
+      final totalParts = allParts.length;
+      final partsPerSection = totalParts / 5;
+      
+      for (int i = 0; i < 5; i++) {
+        final startIdx = (i * partsPerSection).floor();
+        final endIdx = math.min(((i + 1) * partsPerSection).floor(), totalParts);
+        parts.add(allParts.sublist(startIdx, endIdx).join('\n\n'));
+      }
+      
+      return parts;
+    }
+    
+    // 如果没有明确的分隔标记，则按段落平均分配
+    final paragraphs = outline.split(RegExp(r'\n\s*\n')).where((p) => p.trim().isNotEmpty).toList();
+    if (paragraphs.length >= 5) {
+      final totalParagraphs = paragraphs.length;
+      final paragraphsPerPart = totalParagraphs / 5;
+      
+      for (int i = 0; i < 5; i++) {
+        final startIdx = (i * paragraphsPerPart).floor();
+        final endIdx = math.min(((i + 1) * paragraphsPerPart).floor(), totalParagraphs);
+        parts.add(paragraphs.sublist(startIdx, endIdx).join('\n\n'));
+      }
+      
+      return parts;
+    }
+    
+    // 如果段落太少，则强制分成五部分
+    if (paragraphs.length < 5) {
+      // 确保至少有五个元素
+      while (paragraphs.length < 5) {
+        paragraphs.add('继续发展故事');
+      }
+      return paragraphs.sublist(0, 5);
+    }
+    
+    // 应该不会到这里，但为了安全起见
+    return List.generate(5, (index) => '第${index + 1}部分');
   }
 } 

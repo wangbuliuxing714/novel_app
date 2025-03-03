@@ -5,6 +5,8 @@ import 'package:uuid/uuid.dart';
 import 'package:novel_app/prompts/master_prompts.dart';
 import 'package:novel_app/prompts/male_prompts.dart';
 import 'package:novel_app/prompts/female_prompts.dart';
+import 'package:novel_app/prompts/short_novel_male_prompts.dart';
+import 'package:novel_app/prompts/short_novel_female_prompts.dart';
 
 class PromptPackageController extends GetxController {
   final _promptPackageService = Get.find<PromptPackageService>();
@@ -106,6 +108,30 @@ class PromptPackageController extends GetxController {
     return package.content;
   }
   
+  /// 获取短篇小说提示词内容
+  String getShortNovelPromptContent(String type, String targetReader) {
+    // 查找对应的提示词包
+    final packages = getPromptPackagesByType(type);
+    final packageName = targetReader == '女性向' 
+      ? '短篇小说女性向提示词' 
+      : '短篇小说男性向提示词';
+      
+    final package = packages.firstWhere(
+      (p) => p.name == packageName,
+      orElse: () => packages.firstWhere(
+        (p) => p.isDefault,
+        orElse: () => PromptPackage(
+          id: '',
+          name: '',
+          description: '',
+          type: type,
+          content: '',
+        ),
+      ),
+    );
+    return package.content;
+  }
+  
   // 创建一个基于期待感理论的提示词包
   Future<void> createExpectationPromptPackage() async {
     await createPromptPackage(
@@ -119,25 +145,15 @@ class PromptPackageController extends GetxController {
 
 在创作过程中，请遵循以下期待感原则：
 
-1. 【展现价值】期待型：
-   - 展示角色的能力或独特个性
-   - 提供一个发挥能力的空间或背景
-   - 展示对这个能力的迫切需求
-   - 埋没角色的价值（受到轻视、压迫、冷落等）
-   
-2. 【矛盾冲突】期待型：
-   - 构建相互依存的矛盾关系
-   - 一个能力与一个不恰当的规则形成矛盾
-   - 一个欲望与一个压力形成矛盾
-   - 两个矛盾之间互相影响，形成期待
+1. 【欲扬先抑，重点挖坑】：每个高潮前都必须先经历低谷，期待大高潮前往往应该有个小高潮，在这个小高潮后紧跟一个巨大低谷，这样更能衬托出高潮的壮观。挖坑是为了填坑，让读者产生强烈想要填坑的期待感。
 
-在创作大纲和章节内容时，请确保：
-- 每个章节都包含至少一种期待感类型
-- 主角的价值被埋没后，最终能够得到展现
-- 矛盾冲突能够层层递进，不断升级
-- 在关键情节点上，通过期待感的满足给读者带来情感共鸣
+2. 【节奏变化，保持韵律】：如果小说一直是直线剧情，会显得很无聊，就像听一首歌，如果节奏一直不变，就会很单调。小说应当像一首有起伏的歌曲，有高昂的副歌，也有舒缓的间奏。
 
-请记住，期待感的本质是让读者对故事中角色未能正确对待的价值产生期待，希望看到这种情况有所改变。
+3. 【递进原则，层层推进】：剧情发展应当有一种递进感，从轻到重，从浅到深，从个人到集体，从局部到整体，这样能让读者感受到故事在不断向前发展。
+
+4. 【悬念设置，适度吊胃口】：每章结尾都应当设置一个小悬念，让读者想要继续看下去。但悬念不宜过多，也不应长期不解决，否则会让读者感到疲劳。
+
+5. 【情感共鸣，角色成长】：让读者关心故事中的人物，关心他们的成长与命运，这种情感连接是最强的期待来源。角色应当有明显的成长弧线，让读者期待他们的改变。
 ''',
       isDefault: true,
     );
@@ -197,6 +213,24 @@ class PromptPackageController extends GetxController {
       description: '针对女性读者的小说提示词，注重情感、关系和心理描写',
       type: 'target_reader',
       content: FemalePrompts.basicPrinciples + '\n\n' + FemalePrompts.expectationPrompt,
+      isDefault: false,
+    );
+    
+    // 创建短篇小说男性向提示词包
+    await createPromptPackage(
+      name: '短篇小说男性向提示词',
+      description: '针对男性读者的短篇小说提示词，优化节奏控制、人物塑造、世界观构建和叙事技巧',
+      type: 'short_novel',
+      content: ShortNovelMalePrompts.basicPrinciples + '\n\n' + ShortNovelMalePrompts.expectationPrompt,
+      isDefault: true,
+    );
+    
+    // 创建短篇小说女性向提示词包
+    await createPromptPackage(
+      name: '短篇小说女性向提示词',
+      description: '针对女性读者的短篇小说提示词，注重情感节奏、人物塑造、关系网络和环境氛围',
+      type: 'short_novel',
+      content: ShortNovelFemalePrompts.basicPrinciples + '\n\n' + ShortNovelFemalePrompts.expectationPrompt,
       isDefault: false,
     );
   }

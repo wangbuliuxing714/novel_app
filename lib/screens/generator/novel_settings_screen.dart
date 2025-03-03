@@ -33,6 +33,10 @@ class _NovelSettingsScreenState extends State<NovelSettingsScreen> {
   final RxInt _totalChapters = 5.obs;
   final RxBool _useOutline = true.obs;
   
+  // 添加短篇小说相关变量
+  final RxBool _isShortNovel = false.obs;
+  final RxInt _shortNovelWordCount = 15000.obs;
+  
   @override
   void initState() {
     super.initState();
@@ -46,6 +50,10 @@ class _NovelSettingsScreenState extends State<NovelSettingsScreen> {
     _selectedStyle.value = _novelController.selectedStyle;
     _totalChapters.value = _novelController.totalChapters;
     _useOutline.value = _novelController.isUsingOutline.value;
+    
+    // 初始化短篇小说设置
+    _isShortNovel.value = _novelController.isShortNovel.value;
+    _shortNovelWordCount.value = _novelController.shortNovelWordCount.value;
   }
   
   @override
@@ -115,35 +123,79 @@ class _NovelSettingsScreenState extends State<NovelSettingsScreen> {
               maxLines: 3,
             ),
             const SizedBox(height: 16),
+            
+            // 添加短篇小说选项
             Row(
               children: [
-                const Text('章节数量: '),
-                Expanded(
-                  child: Obx(() => Slider(
-                    value: _totalChapters.value.toDouble(),
-                    min: 1,
-                    max: 20,
-                    divisions: 19,
-                    label: _totalChapters.value.toString(),
-                    onChanged: (value) => _totalChapters.value = value.toInt(),
-                  )),
-                ),
-                Obx(() => Text(_totalChapters.value.toString())),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Obx(() => Checkbox(
-                  value: _useOutline.value,
-                  onChanged: (value) => _useOutline.value = value ?? true,
+                Obx(() => Switch(
+                  value: _isShortNovel.value,
+                  onChanged: (value) => _isShortNovel.value = value,
                 )),
-                const Text('使用大纲生成'),
+                const Text('生成短篇小说'),
                 const Tooltip(
-                  message: '启用后，系统会先生成大纲再生成章节内容；禁用后，系统会直接生成章节内容',
+                  message: '启用后，将生成一篇1万到2万字的短篇小说，而不是分章节的长篇小说',
                   child: Icon(Icons.info_outline, size: 16),
                 ),
               ],
+            ),
+            const SizedBox(height: 16),
+            
+            // 根据短篇小说选项显示不同的设置
+            Obx(() => _isShortNovel.value 
+              ? Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Text('短篇字数: '),
+                        Expanded(
+                          child: Slider(
+                            value: _shortNovelWordCount.value.toDouble(),
+                            min: 10000,
+                            max: 20000,
+                            divisions: 10,
+                            label: '${(_shortNovelWordCount.value / 10000).toStringAsFixed(1)}万字',
+                            onChanged: (value) => _shortNovelWordCount.value = value.toInt(),
+                          ),
+                        ),
+                        Text('${(_shortNovelWordCount.value / 10000).toStringAsFixed(1)}万字'),
+                      ],
+                    ),
+                  ],
+                )
+              : Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Text('章节数量: '),
+                        Expanded(
+                          child: Slider(
+                            value: _totalChapters.value.toDouble(),
+                            min: 1,
+                            max: 20,
+                            divisions: 19,
+                            label: _totalChapters.value.toString(),
+                            onChanged: (value) => _totalChapters.value = value.toInt(),
+                          ),
+                        ),
+                        Text(_totalChapters.value.toString()),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _useOutline.value,
+                          onChanged: (value) => _useOutline.value = value ?? true,
+                        ),
+                        const Text('使用大纲生成'),
+                        const Tooltip(
+                          message: '启用后，系统会先生成大纲再生成章节内容；禁用后，系统会直接生成章节内容',
+                          child: Icon(Icons.info_outline, size: 16),
+                        ),
+                      ],
+                    ),
+                  ],
+                )
             ),
           ],
         ),
@@ -316,6 +368,10 @@ class _NovelSettingsScreenState extends State<NovelSettingsScreen> {
     _novelController.setSelectedStyle(_selectedStyle.value);
     _novelController.setTotalChapters(_totalChapters.value);
     _novelController.setUsingOutline(_useOutline.value);
+    
+    // 保存短篇小说设置
+    _novelController.toggleShortNovel(_isShortNovel.value);
+    _novelController.updateShortNovelWordCount(_shortNovelWordCount.value);
     
     Get.back();
     Get.snackbar('成功', '设置已保存');

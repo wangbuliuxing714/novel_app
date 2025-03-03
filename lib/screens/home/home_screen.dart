@@ -217,40 +217,97 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             GetX<NovelController>(
-              builder: (controller) => Row(
+              builder: (controller) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('章节数量：', style: TextStyle(fontSize: 14)),
-                  Expanded(
-                    child: Slider(
-                      value: controller.totalChaptersRx.value.toDouble(),
-                      min: 1,
-                      max: 1000,
-                      divisions: 999,
-                      label: controller.totalChaptersRx.value.toString(),
-                      onChanged: (value) =>
-                          controller.updateTotalChapters(value.toInt()),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 80,
-                    child: TextField(
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      decoration: const InputDecoration(
-                        contentPadding: EdgeInsets.symmetric(horizontal: 8),
-                        suffix: Text('章'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: CheckboxListTile(
+                          title: const Text('短篇小说'),
+                          subtitle: const Text('生成1万到2万字的短篇'),
+                          value: controller.isShortNovel.value,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          onChanged: (value) => controller.toggleShortNovel(value ?? false),
+                        ),
                       ),
-                      controller: TextEditingController(
-                        text: controller.totalChaptersRx.value.toString(),
-                      ),
-                      onSubmitted: (value) {
-                        final chapters = int.tryParse(value);
-                        if (chapters != null && chapters > 0) {
-                          controller.updateTotalChapters(chapters);
-                        }
-                      },
-                    ),
+                    ],
                   ),
+                  if (controller.isShortNovel.value) ...[
+                    Row(
+                      children: [
+                        const Text('字数：', style: TextStyle(fontSize: 14)),
+                        Expanded(
+                          child: Slider(
+                            value: controller.shortNovelWordCount.value.toDouble(),
+                            min: 10000,
+                            max: 20000,
+                            divisions: 100,
+                            label: '${(controller.shortNovelWordCount.value / 1000).toStringAsFixed(1)}万字',
+                            onChanged: (value) =>
+                                controller.updateShortNovelWordCount(value.toInt()),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 80,
+                          child: TextField(
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            decoration: const InputDecoration(
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                              suffix: Text('字'),
+                            ),
+                            controller: TextEditingController(
+                              text: controller.shortNovelWordCount.value.toString(),
+                            ),
+                            onSubmitted: (value) {
+                              final wordCount = int.tryParse(value);
+                              if (wordCount != null && wordCount >= 10000 && wordCount <= 20000) {
+                                controller.updateShortNovelWordCount(wordCount);
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        const Text('章节数量：', style: TextStyle(fontSize: 14)),
+                        Expanded(
+                          child: Slider(
+                            value: controller.totalChaptersRx.value.toDouble(),
+                            min: 1,
+                            max: 1000,
+                            divisions: 999,
+                            label: controller.totalChaptersRx.value.toString(),
+                            onChanged: (value) =>
+                                controller.updateTotalChapters(value.toInt()),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 80,
+                          child: TextField(
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            decoration: const InputDecoration(
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                              suffix: Text('章'),
+                            ),
+                            controller: TextEditingController(
+                              text: controller.totalChaptersRx.value.toString(),
+                            ),
+                            onSubmitted: (value) {
+                              final chapters = int.tryParse(value);
+                              if (chapters != null && chapters > 0) {
+                                controller.updateTotalChapters(chapters);
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

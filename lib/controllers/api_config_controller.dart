@@ -9,6 +9,7 @@ class ModelConfig {
   String apiUrl;         // API地址
   String apiPath;        // API路径
   String model;          // 具体模型名称
+  List<String> modelVariants; // 模型变体列表（多模型标识符）
   String apiFormat;      // API格式（如OpenAI API兼容等）
   String appId;          // 应用ID（百度千帆等需要）
   bool isCustom;         // 是否为自定义模型
@@ -23,12 +24,13 @@ class ModelConfig {
     required this.apiUrl,
     required this.apiPath,
     required this.model,
+    this.modelVariants = const [],
     required this.apiFormat,
     this.appId = '',
     this.isCustom = false,
     this.temperature = 0.7,
     this.topP = 1.0,
-    this.maxTokens = 4000,
+    this.maxTokens = 6000,
     this.repetitionPenalty = 1.3, // 设置默认值
   });
 
@@ -38,6 +40,7 @@ class ModelConfig {
     'apiUrl': apiUrl,
     'apiPath': apiPath,
     'model': model,
+    'modelVariants': modelVariants,
     'apiFormat': apiFormat,
     'appId': appId,
     'isCustom': isCustom,
@@ -53,6 +56,9 @@ class ModelConfig {
     apiUrl: json['apiUrl'] as String? ?? '',
     apiPath: json['apiPath'] as String? ?? '',
     model: json['model'] as String? ?? '',
+    modelVariants: json['modelVariants'] != null 
+        ? List<String>.from(json['modelVariants']) 
+        : [],
     apiFormat: json['apiFormat'] as String? ?? 'OpenAI API兼容',
     appId: json['appId'] as String? ?? '',
     isCustom: json['isCustom'] as bool? ?? false,
@@ -68,6 +74,7 @@ class ModelConfig {
     String? apiUrl,
     String? apiPath,
     String? model,
+    List<String>? modelVariants,
     String? apiFormat,
     String? appId,
     bool? isCustom,
@@ -82,6 +89,7 @@ class ModelConfig {
       apiUrl: apiUrl ?? this.apiUrl,
       apiPath: apiPath ?? this.apiPath,
       model: model ?? this.model,
+      modelVariants: modelVariants ?? this.modelVariants,
       apiFormat: apiFormat ?? this.apiFormat,
       appId: appId ?? this.appId,
       isCustom: isCustom ?? this.isCustom,
@@ -90,6 +98,25 @@ class ModelConfig {
       maxTokens: maxTokens ?? this.maxTokens,
       repetitionPenalty: repetitionPenalty ?? this.repetitionPenalty, // 添加到构造
     );
+  }
+  
+  // 添加模型变体
+  void addModelVariant(String variant) {
+    if (!modelVariants.contains(variant) && variant.isNotEmpty) {
+      modelVariants.add(variant);
+    }
+  }
+  
+  // 删除模型变体
+  void removeModelVariant(String variant) {
+    modelVariants.remove(variant);
+  }
+  
+  // 切换当前模型为指定变体
+  void switchToVariant(String variant) {
+    if (modelVariants.contains(variant)) {
+      model = variant;
+    }
   }
 }
 
@@ -286,6 +313,7 @@ class ApiConfigController extends GetxController {
     String? apiUrl,
     String? apiPath,
     String? model,
+    List<String>? modelVariants,
     String? apiFormat,
     String? appId,
     int? maxTokens,
@@ -297,6 +325,7 @@ class ApiConfigController extends GetxController {
         apiUrl: apiUrl,
         apiPath: apiPath,
         model: model,
+        modelVariants: modelVariants,
         apiFormat: apiFormat,
         appId: appId,
         maxTokens: maxTokens,
@@ -382,5 +411,80 @@ class ApiConfigController extends GetxController {
   void toggleConfigMode() {
     isTextToSpeechMode.value = !isTextToSpeechMode.value;
     _storage.write(_configModeKey, isTextToSpeechMode.value);
+  }
+
+  // 添加模型变体到指定模型
+  Future<void> addModelVariant(String modelName, String variant) async {
+    if (variant.isEmpty) return;
+    
+    final index = models.indexWhere((m) => m.name == modelName);
+    if (index != -1) {
+      // 添加变体到模型
+      models[index].addModelVariant(variant);
+      await _box.put(modelName, models[index].toJson());
+      
+      // 如果是当前选中的模型，更新当前模型配置
+      if (modelName == selectedModelId.value) {
+        _updateCurrentModelConfig();
+      }
+    }
+  }
+  
+  // 删除指定模型的变体
+  Future<void> removeModelVariant(String modelName, String variant) async {
+    final index = models.indexWhere((m) => m.name == modelName);
+    if (index != -1) {
+      // 删除变体
+      models[index].removeModelVariant(variant);
+      await _box.put(modelName, models[index].toJson());
+      
+      // 如果当前模型正在使用这个变体，切换回主模型标识符
+      if (modelName == selectedModelId.value && models[index].model == variant) {
+        // 重置为主模型标识符
+        final mainModel = models[index].model;
+        updateModelIdentifier(modelName, mainModel);
+      }
+    }
+  }
+  
+  // 切换到指定模型的指定变体
+  Future<void> switchToModelVariant(String modelName, String variant) async {
+    final index = models.indexWhere((m) => m.name == modelName);
+    if (index != -1 && models[index].modelVariants.contains(variant)) {
+      // 切换模型标识符
+      updateModelIdentifier(modelName, variant);
+    }
+  }
+  
+  // 更新模型标识符
+  Future<void> updateModelIdentifier(String modelName, String newIdentifier) async {
+    final index = models.indexWhere((m) => m.name == modelName);
+    if (index != -1) {
+      models[index] = models[index].copyWith(model: newIdentifier);
+      await _box.put(modelName, models[index].toJson());
+      
+      // 如果是当前选中的模型，同步更新currentModel
+      if (modelName == selectedModelId.value) {
+        currentModel.update((model) {
+          if (model != null) {
+            model.model = newIdentifier;
+          }
+        });
+      }
+    }
+  }
+  
+  // 获取指定模型的所有变体
+  List<String> getModelVariants(String modelName) {
+    final index = models.indexWhere((m) => m.name == modelName);
+    if (index != -1) {
+      return [...models[index].modelVariants];
+    }
+    return [];
+  }
+  
+  // 获取当前选中模型的所有变体
+  List<String> getCurrentModelVariants() {
+    return getModelVariants(selectedModelId.value);
   }
 } 

@@ -74,9 +74,11 @@ void main() async {
   // 初始化文本转语音控制器
   Get.put(TTSController());
   
-  // 然后初始化其他依赖服务
+  // 先初始化基础服务
   Get.put(NovelGeneratorService(aiService, apiConfig, cacheService));
   Get.put(ContentReviewService(aiService, apiConfig, cacheService));
+  
+  // 然后初始化控制器
   Get.put(NovelController());
   Get.put(DraftController());
   Get.put(GenreController());

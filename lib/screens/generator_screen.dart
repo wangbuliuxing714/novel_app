@@ -170,6 +170,8 @@ class GeneratorScreen extends StatelessWidget {
                         background: controller.currentNovelBackground,
                         style: controller.selectedStyle,
                         specialRequirements: controller.specialRequirements,
+                        isShortNovel: controller.isShortNovel.value,
+                        wordCount: controller.shortNovelWordCount.value,
                       );
                     },
                     style: ElevatedButton.styleFrom(
@@ -201,6 +203,8 @@ class GeneratorScreen extends StatelessWidget {
                         style: controller.selectedStyle,
                         specialRequirements: controller.specialRequirements,
                         continueGeneration: true,
+                        isShortNovel: controller.isShortNovel.value,
+                        wordCount: controller.shortNovelWordCount.value,
                       );
                     },
                     style: OutlinedButton.styleFrom(

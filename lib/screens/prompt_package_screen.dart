@@ -124,6 +124,7 @@ class PromptPackageScreen extends StatelessWidget {
       'target_reader': '目标读者提示词',
       'expectation': '期待感提示词',
       'character': '角色提示词',
+      'short_novel': '短篇小说提示词',
     };
     
     return typeNames[type] ?? type;
@@ -137,6 +138,7 @@ class PromptPackageScreen extends StatelessWidget {
       'target_reader': Colors.pink[700],
       'expectation': Colors.teal[700],
       'character': Colors.indigo[700],
+      'short_novel': Colors.deepOrange[700],
     };
     
     return typeColors[type] ?? Colors.grey[700]!;
@@ -157,7 +159,18 @@ class PromptPackageScreen extends StatelessWidget {
       'target_reader',
       'expectation',
       'character',
+      'short_novel',
     ];
+    
+    final typeNames = {
+      'master': '主提示词',
+      'outline': '大纲提示词',
+      'chapter': '章节提示词',
+      'target_reader': '目标读者提示词',
+      'expectation': '期待感提示词',
+      'character': '角色提示词',
+      'short_novel': '短篇小说提示词',
+    };
     
     showDialog(
       context: context,
@@ -195,9 +208,13 @@ class PromptPackageScreen extends StatelessWidget {
                   ),
                   items: typeOptions.map((type) => DropdownMenuItem(
                     value: type,
-                    child: Text(_getTypeDisplayName(type)),
+                    child: Text(typeNames[type] ?? type),
                   )).toList(),
-                  onChanged: (value) => setState(() => selectedType = value!),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => selectedType = value);
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -236,13 +253,13 @@ class PromptPackageScreen extends StatelessWidget {
               child: const Text('取消'),
             ),
             TextButton(
-              onPressed: () {
-                if (nameController.text.isEmpty || descriptionController.text.isEmpty) {
-                  Get.snackbar('错误', '请填写所有必填字段');
+              onPressed: () async {
+                if (nameController.text.isEmpty || contentController.text.isEmpty) {
+                  Get.snackbar('错误', '名称和内容不能为空');
                   return;
                 }
                 
-                controller.createPromptPackage(
+                await controller.createPromptPackage(
                   name: nameController.text,
                   description: descriptionController.text,
                   type: selectedType,
