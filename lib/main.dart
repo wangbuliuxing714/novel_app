@@ -75,7 +75,7 @@ void main() async {
   Get.put(TTSController());
   
   // 先初始化基础服务
-  Get.put(NovelGeneratorService(aiService, apiConfig, cacheService));
+  Get.put(NovelGeneratorService(aiService, cacheService, apiConfig));
   Get.put(ContentReviewService(aiService, apiConfig, cacheService));
   
   // 然后初始化控制器

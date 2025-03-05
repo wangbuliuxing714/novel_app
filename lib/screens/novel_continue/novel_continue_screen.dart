@@ -135,8 +135,8 @@ class _NovelContinueScreenState extends State<NovelContinueScreen> {
                                   Slider(
                                     value: _chapterCount.value.toDouble(),
                                     min: 1,
-                                    max: 5,
-                                    divisions: 4,
+                                    max: 20,
+                                    divisions: 19,
                                     label: '${_chapterCount.value}章',
                                     onChanged: (value) {
                                       _chapterCount.value = value.toInt();
