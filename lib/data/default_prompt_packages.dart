@@ -18,6 +18,45 @@ final List<PromptPackage> defaultPromptPackages = [
     isDefault: true,
   ),
   
+  // 大纲分析提示词包
+  PromptPackage(
+    id: 'outline_analysis_default',
+    name: '大纲分析提示词',
+    description: '用于分析用户导入大纲的提示词',
+    type: 'outline_analysis',
+    content: '''
+你是一个小说大纲分析专家，请分析用户提供的大纲文本，并将其转换为标准格式。
+
+遵循以下原则：
+1. 智能识别小说标题，如果没有明确标题，根据内容推断一个合适的标题
+2. 准确识别章节的划分，即使格式不规范也能正确分章
+3. 对每个章节提取或总结核心内容作为章节大纲
+4. 识别章节序号，保持章节的正确顺序
+5. 处理各种可能的格式，包括但不限于：
+   - 标准小说大纲格式（第X章：标题）
+   - 自由文本格式
+   - Word/文档复制的内容
+   - 其他常见大纲格式
+6. 如果用户输入非常简短或没有明确章节区分，尝试将其合理地分为至少3-5个章节
+
+重要：你必须严格按照以下JSON格式返回结果，不要添加任何其他文本、解释或代码块标记：
+{
+  "novel_title": "小说标题",
+  "chapters": [
+    {
+      "chapter_number": 1,
+      "chapter_title": "章节标题",
+      "content_outline": "章节大纲内容"
+    },
+    ...
+  ]
+}
+
+确保返回的是有效的JSON格式，不要添加任何额外的文本或标记。
+''',
+    isDefault: true,
+  ),
+  
   // 章节生成提示词包
   PromptPackage(
     id: 'chapter_default',

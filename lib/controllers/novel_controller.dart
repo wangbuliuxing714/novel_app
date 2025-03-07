@@ -16,6 +16,7 @@ import 'package:novel_app/services/ai_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:novel_app/controllers/prompt_package_controller.dart';
 
 class NovelController extends GetxController {
   final _novelGenerator = Get.find<NovelGeneratorService>();
@@ -24,6 +25,7 @@ class NovelController extends GetxController {
   final _characterTypeService = Get.find<CharacterTypeService>();
   final _characterCardService = Get.find<CharacterCardService>();
   final _aiService = Get.find<AIService>();
+  final _promptPackageController = Get.find<PromptPackageController>();
   
   final novels = <Novel>[].obs;
   final title = ''.obs;
@@ -332,6 +334,8 @@ class NovelController extends GetxController {
   // 导入大纲
   Future<bool> importOutline(String outlineText) async {
     try {
+      print('开始解析大纲文本...');
+      
       // 解析大纲文本
       final lines = outlineText.split('\n');
       String novelTitle = '';
@@ -339,19 +343,78 @@ class NovelController extends GetxController {
       int currentChapter = 0;
       StringBuffer currentContent = StringBuffer();
       
+      // 第一步：尝试提取小说标题
       for (String line in lines) {
         line = line.trim();
         if (line.isEmpty) continue;
         
-        // 检查是否是小说标题
-        if (line.startsWith('《') && line.endsWith('》')) {
-          novelTitle = line.substring(1, line.length - 1);
-          continue;
+        // 检查是否是小说标题（通常在开头，可能被《》或""包围）
+        if ((line.startsWith('《') && line.endsWith('》')) || 
+            (line.startsWith('"') && line.endsWith('"')) ||
+            (line.startsWith('标题：') || line.startsWith('小说标题：'))) {
+          
+          // 提取标题，去除可能的包围符号
+          if (line.startsWith('《') && line.endsWith('》')) {
+            novelTitle = line.substring(1, line.length - 1);
+          } else if (line.startsWith('"') && line.endsWith('"')) {
+            novelTitle = line.substring(1, line.length - 1);
+          } else if (line.startsWith('标题：')) {
+            novelTitle = line.substring(3).trim();
+          } else if (line.startsWith('小说标题：')) {
+            novelTitle = line.substring(5).trim();
+          } else {
+            novelTitle = line;
+          }
+          
+          print('提取到小说标题: $novelTitle');
+          break;
+        }
+      }
+      
+      // 如果没有找到明确的标题，使用第一行非空文本作为标题
+      if (novelTitle.isEmpty) {
+        for (String line in lines) {
+          line = line.trim();
+          if (line.isNotEmpty && !line.startsWith('第') && line.length < 30) {
+            novelTitle = line;
+            print('使用第一行文本作为标题: $novelTitle');
+            break;
+          }
+        }
+      }
+      
+      // 如果仍然没有标题，使用默认标题
+      if (novelTitle.isEmpty) {
+        novelTitle = title.value.isNotEmpty ? title.value : '新小说';
+        print('使用默认标题: $novelTitle');
+      }
+      
+      // 第二步：解析章节
+      // 尝试多种章节标记模式
+      final chapterPatterns = [
+        RegExp(r'^第(\d+)章[：:](.*?)$'),  // 标准格式：第X章：标题
+        RegExp(r'^第(\d+)章\s+(.*?)$'),    // 空格分隔：第X章 标题
+        RegExp(r'^(\d+)[\.、](.*?)$'),     // 数字编号：1.标题 或 1、标题
+        RegExp(r'^Chapter\s*(\d+)[：:.\s]+(.*?)$', caseSensitive: false),  // 英文格式
+      ];
+      
+      for (String line in lines) {
+        line = line.trim();
+        if (line.isEmpty) continue;
+        
+        bool isChapterTitle = false;
+        RegExpMatch? match;
+        
+        // 尝试所有章节标题模式
+        for (final pattern in chapterPatterns) {
+          match = pattern.firstMatch(line);
+          if (match != null) {
+            isChapterTitle = true;
+            break;
+          }
         }
         
-        // 检查是否是章节标题
-        final chapterMatch = RegExp(r'^第(\d+)章[：:](.*?)$').firstMatch(line);
-        if (chapterMatch != null) {
+        if (isChapterTitle && match != null) {
           // 如果有上一章的内容，保存它
           if (currentChapter > 0 && currentContent.isNotEmpty) {
             final lastChapterIndex = chapters.indexWhere((ch) => ch['chapterNumber'] == currentChapter);
@@ -361,13 +424,16 @@ class NovelController extends GetxController {
             currentContent.clear();
           }
           
-          currentChapter = int.parse(chapterMatch.group(1)!);
-          final chapterTitle = chapterMatch.group(2)?.trim() ?? '';
+          currentChapter = int.parse(match.group(1)!);
+          final chapterTitle = match.group(2)?.trim() ?? '';
+          
           chapters.add({
             'chapterNumber': currentChapter,
-            'chapterTitle': chapterTitle,
+            'chapterTitle': chapterTitle.isEmpty ? '第$currentChapter章' : chapterTitle,
             'contentOutline': ''
           });
+          
+          print('提取到章节: 第$currentChapter章 - ${chapterTitle.isEmpty ? "无标题" : chapterTitle}');
         } else if (currentChapter > 0) {
           // 其他行都视为当前章节的大纲内容
           currentContent.writeln(line);
@@ -382,10 +448,64 @@ class NovelController extends GetxController {
         }
       }
       
-      // 如果没有解析到小说标题，使用默认标题
-      if (novelTitle.isEmpty) {
-        novelTitle = title.value.isNotEmpty ? title.value : '新小说';
+      // 如果没有识别到任何章节，尝试自动分章
+      if (chapters.isEmpty) {
+        print('未识别到章节标记，尝试自动分章...');
+        
+        // 按段落分割文本
+        final paragraphs = outlineText.split(RegExp(r'\n\s*\n'));
+        final nonEmptyParagraphs = paragraphs.where((p) => p.trim().isNotEmpty).toList();
+        
+        // 确定章节数量（至少3章，最多5章或段落数）
+        final chapterCount = nonEmptyParagraphs.length < 3 ? 3 : 
+                            (nonEmptyParagraphs.length > 5 ? 5 : nonEmptyParagraphs.length);
+        
+        // 计算每章应包含的段落数
+        final paragraphsPerChapter = (nonEmptyParagraphs.length / chapterCount).ceil();
+        
+        for (int i = 0; i < chapterCount; i++) {
+          final chapterNumber = i + 1;
+          final startIndex = i * paragraphsPerChapter;
+          final endIndex = (startIndex + paragraphsPerChapter <= nonEmptyParagraphs.length) 
+              ? startIndex + paragraphsPerChapter 
+              : nonEmptyParagraphs.length;
+          
+          // 提取该章节的段落
+          final chapterParagraphs = nonEmptyParagraphs.sublist(
+              startIndex, 
+              endIndex > nonEmptyParagraphs.length ? nonEmptyParagraphs.length : endIndex
+          );
+          
+          // 使用第一段的前20个字符作为章节标题
+          String chapterTitle = '';
+          if (chapterParagraphs.isNotEmpty) {
+            final firstPara = chapterParagraphs[0].trim();
+            chapterTitle = firstPara.length > 20 ? firstPara.substring(0, 20) + '...' : firstPara;
+          }
+          
+          // 如果标题为空，使用默认标题
+          if (chapterTitle.isEmpty) {
+            chapterTitle = '第$chapterNumber章';
+          }
+          
+          // 将剩余段落作为章节内容
+          final contentBuffer = StringBuffer();
+          for (int j = 0; j < chapterParagraphs.length; j++) {
+            contentBuffer.writeln(chapterParagraphs[j].trim());
+          }
+          
+          chapters.add({
+            'chapterNumber': chapterNumber,
+            'chapterTitle': chapterTitle,
+            'contentOutline': contentBuffer.toString().trim()
+          });
+          
+          print('自动创建章节: 第$chapterNumber章 - $chapterTitle');
+        }
       }
+      
+      // 确保章节按顺序排序
+      chapters.sort((a, b) => a['chapterNumber'].compareTo(b['chapterNumber']));
       
       // 创建大纲对象
       final outline = NovelOutline(
@@ -397,9 +517,7 @@ class NovelController extends GetxController {
         )).toList(),
       );
       
-      // 确保章节按顺序排序
-      outline.chapters.sort((a, b) => a.chapterNumber.compareTo(b.chapterNumber));
-      
+      // 更新应用状态
       currentOutline.value = outline;
       isUsingOutline.value = true;
       title.value = outline.novelTitle;
@@ -407,14 +525,16 @@ class NovelController extends GetxController {
       
       print('导入大纲成功：${outline.chapters.length} 章');
       for (var ch in outline.chapters) {
-        print('第${ch.chapterNumber}章：${ch.chapterTitle}\n${ch.contentOutline}\n');
+        print('第${ch.chapterNumber}章：${ch.chapterTitle}\n${ch.contentOutline.substring(0, ch.contentOutline.length > 50 ? 50 : ch.contentOutline.length)}...\n');
       }
       
-      Get.snackbar('成功', '大纲导入成功！共 ${outline.chapters.length} 章');
       return true;
     } catch (e) {
       print('导入大纲失败：$e');
-      Get.snackbar('错误', '大纲格式不正确：$e');
+      Get.snackbar('错误', '大纲解析失败：$e', 
+        duration: const Duration(seconds: 5),
+        snackPosition: SnackPosition.BOTTOM
+      );
       return false;
     }
   }

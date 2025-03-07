@@ -17,6 +17,12 @@ import 'package:novel_app/controllers/style_controller.dart';
 import 'package:novel_app/services/character_type_service.dart';
 import 'package:novel_app/services/character_card_service.dart';
 import 'package:novel_app/screens/character_card_list_screen.dart';
+import 'package:novel_app/screens/license_screen.dart';
+import 'package:novel_app/screens/tts_screen.dart';
+import 'package:novel_app/screens/prompt_package_list_screen.dart';
+import 'package:novel_app/screens/tools_screen.dart';
+import 'package:novel_app/screens/character_generator_screen.dart';
+import 'package:novel_app/screens/background_generator_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -60,6 +66,69 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => Get.to(() => const SettingsScreen()),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              switch (value) {
+                case 'settings':
+                  Get.to(() => const SettingsScreen());
+                  break;
+                case 'reset':
+                  controller.startNewNovel();
+                  break;
+                case 'adjust_detail_level':
+                  _showDetailLevelDialog(context);
+                  break;
+                case 'licenses':
+                  Get.to(() => LicenseScreen());
+                  break;
+                case 'tts':
+                  Get.to(() => TTSScreen());
+                  break;
+                case 'prompt_packages':
+                  Get.to(() => PromptPackageListScreen());
+                  break;
+                case 'tools':
+                  Get.to(() => ToolsScreen());
+                  break;
+                case 'character_generator':
+                  Get.to(() => CharacterGeneratorScreen());
+                  break;
+                case 'background_generator':
+                  Get.to(() => BackgroundGeneratorScreen());
+                  break;
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings),
+                  title: Text('设置'),
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'reset',
+                child: ListTile(
+                  leading: Icon(Icons.refresh),
+                  title: Text('重置表单'),
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'adjust_detail_level',
+                child: ListTile(
+                  leading: Icon(Icons.tune),
+                  title: Text('调整细节程度'),
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'licenses',
+                child: ListTile(
+                  leading: Icon(Icons.verified_user),
+                  title: Text('许可证'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -123,7 +192,13 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildGeneratorForm(),
+              SizedBox(
+                child: Row(
+                  children: [
+                    Expanded(child: _TitleInput()),
+                  ],
+                ),
+              ),
               const SizedBox(height: 20),
               _buildGenerationStatus(),
               const SizedBox(height: 20),
@@ -148,12 +223,6 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(
               children: [
                 Expanded(child: _TitleInput()),
-                const SizedBox(width: 16),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.upload_file),
-                  label: const Text('导入大纲'),
-                  onPressed: () => _showImportOutlineDialog(context),
-                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -371,128 +440,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showImportOutlineDialog(BuildContext context) {
-    final textController = TextEditingController();
-    final RxBool isAnalyzing = false.obs;
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('导入大纲', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '请输入您的小说大纲，支持多种格式：',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '• 标准章节格式（第X章：标题）\n'
-              '• 数字编号格式（1. 标题 或 1、标题）\n'
-              '• 英文格式（Chapter 1: 标题）\n'
-              '• 自由文本格式（会自动分章）',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '系统将自动识别章节和标题，无需特定格式',
-              style: TextStyle(fontStyle: FontStyle.italic, color: Colors.blue),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Obx(() => Stack(
-                children: [
-                  TextField(
-                    controller: textController,
-                    maxLines: 10,
-                    decoration: const InputDecoration(
-                      hintText: '在此粘贴或输入您的小说大纲...',
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.all(12),
-                    ),
-                    enabled: !isAnalyzing.value,
-                  ),
-                  if (isAnalyzing.value)
-                    Container(
-                      height: 240, // 设置合适的高度，与TextField的maxLines对应
-                      alignment: Alignment.center,
-                      color: Colors.black.withOpacity(0.05),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 16),
-                          Text('正在解析大纲格式...',
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                          SizedBox(height: 8),
-                          Text('这可能需要几秒钟时间',
-                              style: TextStyle(fontSize: 12, color: Colors.grey)),
-                        ],
-                      ),
-                    ),
-                ],
-              )),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          Obx(() => ElevatedButton(
-            onPressed: isAnalyzing.value
-                ? null
-                : () async {
-                    if (textController.text.trim().isEmpty) {
-                      Get.snackbar('提示', '请输入大纲内容');
-                      return;
-                    }
-                    
-                    isAnalyzing.value = true;
-                    final result = await controller.importOutline(textController.text);
-                    isAnalyzing.value = false;
-                    
-                    Navigator.pop(context);
-                    if (result) {
-                      Get.snackbar(
-                        '成功', 
-                        '大纲导入成功！共 ${controller.currentOutline.value?.chapters.length ?? 0} 章',
-                        backgroundColor: Colors.green.shade100,
-                        colorText: Colors.green.shade800,
-                        snackPosition: SnackPosition.BOTTOM,
-                        duration: const Duration(seconds: 3),
-                      );
-                    }
-                  },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                isAnalyzing.value
-                    ? Container(
-                        width: 16,
-                        height: 16,
-                        margin: const EdgeInsets.only(right: 8),
-                        child: const CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(Icons.check, size: 16),
-                const SizedBox(width: 4),
-                const Text('智能导入'),
-              ],
-            ),
-          )),
-        ],
-      ),
-    );
+  void _showDetailLevelDialog(BuildContext context) {
+    // Detail level dialog implementation
   }
 
   Widget _buildGenreSelector() {

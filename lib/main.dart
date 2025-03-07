@@ -74,6 +74,10 @@ void main() async {
   // 初始化文本转语音控制器
   Get.put(TTSController());
   
+  // 初始化提示词包服务（移到前面）
+  await Get.putAsync(() => PromptPackageService().init());
+  final promptPackageController = Get.put(PromptPackageController());
+  
   // 先初始化基础服务
   Get.put(NovelGeneratorService(aiService, cacheService, apiConfig));
   Get.put(ContentReviewService(aiService, apiConfig, cacheService));
@@ -83,6 +87,17 @@ void main() async {
   Get.put(DraftController());
   Get.put(GenreController());
   Get.put(StyleController());
+  
+  // 初始化角色生成服务和背景生成服务
+  Get.put(CharacterGeneratorService(
+    aiService, 
+    Get.find<CharacterCardService>(), 
+    Get.find<CharacterTypeService>(),
+    promptPackageController
+  ));
+  
+  // 初始化背景生成服务
+  Get.put(BackgroundGeneratorService(aiService, promptPackageController));
   
   // 初始化公告服务
   final announcementService = Get.put(AnnouncementService());
@@ -106,19 +121,6 @@ void main() async {
     final licenseService = Get.put(LicenseService());
     await licenseService.init();
   }
-
-  // 在初始化服务的地方添加提示词包服务
-  await Get.putAsync(() => PromptPackageService().init());
-  final promptPackageController = Get.put(PromptPackageController());
-  
-  // 初始化角色生成服务和背景生成服务
-  Get.put(CharacterGeneratorService(
-    aiService, 
-    Get.find<CharacterCardService>(), 
-    Get.find<CharacterTypeService>(),
-    promptPackageController
-  ));
-  Get.put(BackgroundGeneratorService(aiService, promptPackageController));
 
   runApp(const MyApp());
 }

@@ -869,6 +869,25 @@ ${ChapterGeneration.getSystemPrompt(style)}
             // 使用用户提供的大纲
             outlineContent = outline.toString();
             updateRealtimeOutput('使用用户提供的大纲：\n$outlineContent\n');
+            
+            // 确保大纲内容被正确处理
+            if (outline is NovelOutline) {
+              // 如果是NovelOutline对象，转换为JSON字符串以便更好地提取章节信息
+              try {
+                final outlineJson = jsonEncode({
+                  'novel_title': outline.novelTitle,
+                  'chapters': outline.chapters.map((ch) => {
+                    'chapter_number': ch.chapterNumber,
+                    'chapter_title': ch.chapterTitle,
+                    'content_outline': ch.contentOutline
+                  }).toList()
+                });
+                outlineContent = outlineJson;
+                print('将NovelOutline对象转换为JSON格式');
+              } catch (e) {
+                print('转换NovelOutline为JSON失败: $e');
+              }
+            }
           } else {
             // 生成新大纲
             outlineContent = await generateOutline(
@@ -2563,16 +2582,90 @@ ${chapterPrompt.isNotEmpty ? chapterPrompt + '\n\n' : ''}
       String chapterOutline = '';
       
       // 尝试从大纲中提取章节信息
-      final chapterPattern = RegExp(r'第' + chapterNumber.toString() + r'章[：:](.*?)\n(.*?)(?=第\d+章|$)', dotAll: true);
-      final match = chapterPattern.firstMatch(outline);
-      
-      if (match != null) {
-        chapterTitle = '第$chapterNumber章：${match.group(1)?.trim() ?? ''}';
-        chapterOutline = match.group(2)?.trim() ?? '';
-      } else {
-        // 如果没有找到匹配的章节信息，使用通用描述
-        chapterOutline = '这是第$chapterNumber章的内容';
+      // 首先检查是否是导入的结构化大纲
+      if (outline.contains('"chapter_number":') || outline.contains('"chapterNumber":')) {
+        try {
+          // 尝试解析JSON格式大纲
+          Map<String, dynamic> outlineJson;
+          try {
+            outlineJson = jsonDecode(outline);
+          } catch (e) {
+            // 如果直接解析失败，尝试提取JSON部分
+            final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(outline);
+            if (jsonMatch != null) {
+              outlineJson = jsonDecode(jsonMatch.group(0)!);
+            } else {
+              throw Exception('无法解析大纲JSON');
+            }
+          }
+          
+          // 查找当前章节
+          if (outlineJson.containsKey('chapters')) {
+            final chapters = outlineJson['chapters'] as List;
+            for (final chapter in chapters) {
+              final chapterMap = chapter as Map<String, dynamic>;
+              final chapterNum = chapterMap.containsKey('chapter_number') 
+                  ? chapterMap['chapter_number'] 
+                  : chapterMap['chapterNumber'];
+                  
+              if (chapterNum == chapterNumber) {
+                final chapterTitleKey = chapterMap.containsKey('chapter_title') 
+                    ? 'chapter_title' 
+                    : 'chapterTitle';
+                final chapterOutlineKey = chapterMap.containsKey('content_outline') 
+                    ? 'content_outline' 
+                    : 'contentOutline';
+                    
+                chapterTitle = '第$chapterNumber章：${chapterMap[chapterTitleKey]}';
+                chapterOutline = chapterMap[chapterOutlineKey];
+                print('从JSON大纲中提取到章节信息: $chapterTitle');
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          print('解析JSON大纲失败: $e，将使用正则表达式提取');
+        }
       }
+      
+      // 如果上面的方法没有找到章节信息，使用正则表达式提取
+      if (chapterOutline.isEmpty) {
+        final chapterPattern = RegExp(r'第' + chapterNumber.toString() + r'章[：:](.*?)\n(.*?)(?=第\d+章|$)', dotAll: true);
+        final match = chapterPattern.firstMatch(outline);
+        
+        if (match != null) {
+          chapterTitle = '第$chapterNumber章：${match.group(1)?.trim() ?? ''}';
+          chapterOutline = match.group(2)?.trim() ?? '';
+          print('使用正则表达式从大纲中提取到章节信息');
+        } else {
+          // 如果没有找到匹配的章节信息，尝试查找NovelOutline对象
+          try {
+            final novelController = Get.find<NovelController>();
+            if (novelController.currentOutline.value != null) {
+              final outlineChapter = novelController.currentOutline.value!.chapters
+                  .firstWhere((ch) => ch.chapterNumber == chapterNumber, 
+                      orElse: () => ChapterOutline(
+                        chapterNumber: chapterNumber, 
+                        chapterTitle: '第$chapterNumber章', 
+                        contentOutline: ''));
+                        
+              chapterTitle = '第$chapterNumber章：${outlineChapter.chapterTitle}';
+              chapterOutline = outlineChapter.contentOutline;
+              print('从NovelController中获取到章节信息');
+            }
+          } catch (e) {
+            print('从NovelController获取章节信息失败: $e');
+          }
+          
+          // 如果仍然没有找到章节信息，使用通用描述
+          if (chapterOutline.isEmpty) {
+            chapterOutline = '这是第$chapterNumber章的内容';
+            print('未找到章节大纲，使用默认描述');
+          }
+        }
+      }
+      
+      print('章节大纲: $chapterOutline');
       
       // 获取前一章的内容作为上下文参考
       String previousContent = '';
