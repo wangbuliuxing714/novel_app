@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 > nul
-title 岱宗文脉
+title AI小说生成器
 
 :: 检查Python是否安装
 python --version > nul 2>&1
