@@ -136,6 +136,9 @@ class ApiConfigController extends GetxController {
   final RxBool isDualModelMode = false.obs;
   final RxString outlineModelId = ''.obs;
   final RxString chapterModelId = ''.obs;
+  // 添加模型变体选择的支持
+  final RxString outlineModelVariant = ''.obs;
+  final RxString chapterModelVariant = ''.obs;
 
   final List<ModelConfig> _defaultModels = [
     ModelConfig(
@@ -401,6 +404,8 @@ class ApiConfigController extends GetxController {
     isDualModelMode.value = _box.get('dual_model_mode') ?? false;
     outlineModelId.value = _box.get('outline_model_id') ?? selectedModelId.value;
     chapterModelId.value = _box.get('chapter_model_id') ?? selectedModelId.value;
+    outlineModelVariant.value = _box.get('outline_model_variant') ?? '';
+    chapterModelVariant.value = _box.get('chapter_model_variant') ?? '';
   }
 
   void setApiKey(String value) {
@@ -504,37 +509,79 @@ class ApiConfigController extends GetxController {
       // 如果开启双模型模式，默认使用当前选中的模型作为大纲模型
       outlineModelId.value = selectedModelId.value;
       chapterModelId.value = selectedModelId.value;
+      // 获取当前选中模型的标识符
+      final currentModel = getCurrentModel();
+      outlineModelVariant.value = currentModel.model;
+      chapterModelVariant.value = currentModel.model;
     }
     _saveConfig();
   }
 
   void updateOutlineModel(String modelId) {
     outlineModelId.value = modelId;
+    // 更新模型后，设置默认变体为主模型标识符
+    final model = models.firstWhere((m) => m.name == modelId);
+    outlineModelVariant.value = model.model;
     _saveConfig();
   }
 
   void updateChapterModel(String modelId) {
     chapterModelId.value = modelId;
+    // 更新模型后，设置默认变体为主模型标识符
+    final model = models.firstWhere((m) => m.name == modelId);
+    chapterModelVariant.value = model.model;
+    _saveConfig();
+  }
+
+  // 添加更新大纲模型变体的方法
+  void updateOutlineModelVariant(String variant) {
+    outlineModelVariant.value = variant;
+    _saveConfig();
+  }
+
+  // 添加更新章节模型变体的方法
+  void updateChapterModelVariant(String variant) {
+    chapterModelVariant.value = variant;
     _saveConfig();
   }
 
   ModelConfig getOutlineModel() {
-    return models.firstWhere(
+    ModelConfig model = models.firstWhere(
       (model) => model.name == outlineModelId.value,
       orElse: () => getCurrentModel(),
     );
+    
+    // 如果设置了特定的模型变体，临时修改模型标识符
+    if (outlineModelVariant.value.isNotEmpty && 
+        (model.modelVariants.contains(outlineModelVariant.value) || 
+         model.model == outlineModelVariant.value)) {
+      return model.copyWith(model: outlineModelVariant.value);
+    }
+    
+    return model;
   }
 
   ModelConfig getChapterModel() {
-    return models.firstWhere(
+    ModelConfig model = models.firstWhere(
       (model) => model.name == chapterModelId.value,
       orElse: () => getCurrentModel(),
     );
+    
+    // 如果设置了特定的模型变体，临时修改模型标识符
+    if (chapterModelVariant.value.isNotEmpty && 
+        (model.modelVariants.contains(chapterModelVariant.value) || 
+         model.model == chapterModelVariant.value)) {
+      return model.copyWith(model: chapterModelVariant.value);
+    }
+    
+    return model;
   }
 
   void _saveConfig() {
     _box.put('dual_model_mode', isDualModelMode.value);
     _box.put('outline_model_id', outlineModelId.value);
     _box.put('chapter_model_id', chapterModelId.value);
+    _box.put('outline_model_variant', outlineModelVariant.value);
+    _box.put('chapter_model_variant', chapterModelVariant.value);
   }
 } 

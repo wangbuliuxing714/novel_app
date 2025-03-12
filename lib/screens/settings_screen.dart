@@ -487,6 +487,59 @@ class SettingsScreen extends StatelessWidget {
                               }
                             },
                           ),
+                          
+                          // 添加大纲模型变体选择
+                          const SizedBox(height: 8),
+                          Obx(() {
+                            // 获取当前选中的大纲模型
+                            final selectedModel = controller.models.firstWhere(
+                              (model) => model.name == controller.outlineModelId.value,
+                              orElse: () => controller.getCurrentModel(),
+                            );
+                            
+                            // 获取所有变体加上主模型标识符
+                            final allVariants = [selectedModel.model, ...selectedModel.modelVariants]
+                                .where((v) => v.isNotEmpty)
+                                .toSet()
+                                .toList();
+                            
+                            // 如果没有变体，不显示选择器
+                            if (allVariants.length <= 1) {
+                              return const SizedBox.shrink();
+                            }
+                            
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '大纲生成模型变体',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                DropdownButtonFormField<String>(
+                                  value: controller.outlineModelVariant.value.isEmpty ? 
+                                      selectedModel.model : controller.outlineModelVariant.value,
+                                  decoration: const InputDecoration(
+                                    labelText: '选择大纲模型变体',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  items: allVariants.map((variant) => DropdownMenuItem(
+                                    value: variant,
+                                    child: Text(variant),
+                                  )).toList(),
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      controller.updateOutlineModelVariant(value);
+                                    }
+                                  },
+                                ),
+                              ],
+                            );
+                          }),
+                          
                           const SizedBox(height: 16),
                           const Text(
                             '章节生成模型',
@@ -512,6 +565,58 @@ class SettingsScreen extends StatelessWidget {
                               }
                             },
                           ),
+                          
+                          // 添加章节模型变体选择
+                          const SizedBox(height: 8),
+                          Obx(() {
+                            // 获取当前选中的章节模型
+                            final selectedModel = controller.models.firstWhere(
+                              (model) => model.name == controller.chapterModelId.value,
+                              orElse: () => controller.getCurrentModel(),
+                            );
+                            
+                            // 获取所有变体加上主模型标识符
+                            final allVariants = [selectedModel.model, ...selectedModel.modelVariants]
+                                .where((v) => v.isNotEmpty)
+                                .toSet()
+                                .toList();
+                            
+                            // 如果没有变体，不显示选择器
+                            if (allVariants.length <= 1) {
+                              return const SizedBox.shrink();
+                            }
+                            
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '章节生成模型变体',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                DropdownButtonFormField<String>(
+                                  value: controller.chapterModelVariant.value.isEmpty ? 
+                                      selectedModel.model : controller.chapterModelVariant.value,
+                                  decoration: const InputDecoration(
+                                    labelText: '选择章节模型变体',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  items: allVariants.map((variant) => DropdownMenuItem(
+                                    value: variant,
+                                    child: Text(variant),
+                                  )).toList(),
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      controller.updateChapterModelVariant(value);
+                                    }
+                                  },
+                                ),
+                              ],
+                            );
+                          }),
                         ],
                       ),
                     )),
