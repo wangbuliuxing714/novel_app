@@ -436,6 +436,89 @@ class SettingsScreen extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '双模型模式',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Obx(() => SwitchListTile(
+                      title: const Text('启用双模型模式'),
+                      subtitle: const Text('分别为大纲生成和章节生成使用不同的模型'),
+                      value: controller.isDualModelMode.value,
+                      onChanged: (value) => controller.toggleDualModelMode(value),
+                    )),
+                    const SizedBox(height: 16),
+                    Obx(() => Visibility(
+                      visible: controller.isDualModelMode.value,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '大纲生成模型',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: controller.outlineModelId.value,
+                            decoration: const InputDecoration(
+                              labelText: '选择大纲生成模型',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: controller.models.map((model) => DropdownMenuItem(
+                              value: model.name,
+                              child: Text(model.name),
+                            )).toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                controller.updateOutlineModel(value);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            '章节生成模型',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: controller.chapterModelId.value,
+                            decoration: const InputDecoration(
+                              labelText: '选择章节生成模型',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: controller.models.map((model) => DropdownMenuItem(
+                              value: model.name,
+                              child: Text(model.name),
+                            )).toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                controller.updateChapterModel(value);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    )),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),

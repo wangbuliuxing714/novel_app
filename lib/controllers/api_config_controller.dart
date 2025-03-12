@@ -132,6 +132,11 @@ class ApiConfigController extends GetxController {
   final RxInt maxTokens = 4000.obs;
   final RxDouble repetitionPenalty = 1.3.obs; // 添加重复惩罚参数的响应式变量
 
+  // 添加双模型模式的支持
+  final RxBool isDualModelMode = false.obs;
+  final RxString outlineModelId = ''.obs;
+  final RxString chapterModelId = ''.obs;
+
   final List<ModelConfig> _defaultModels = [
     ModelConfig(
       name: 'ChatGPT',
@@ -213,6 +218,8 @@ class ApiConfigController extends GetxController {
     _loadModels();
     if (models.isNotEmpty) {
       selectedModelId.value = models[0].name;
+      outlineModelId.value = models[0].name;
+      chapterModelId.value = models[0].name;
       _updateCurrentModelConfig();
     }
     _loadConfig();
@@ -391,6 +398,9 @@ class ApiConfigController extends GetxController {
     baseUrl.value = _storage.read(_baseUrlKey) ?? '';
     ttsApiKey.value = _storage.read(_ttsApiKeyKey) ?? '';
     isTextToSpeechMode.value = _storage.read(_configModeKey) ?? false;
+    isDualModelMode.value = _box.get('dual_model_mode') ?? false;
+    outlineModelId.value = _box.get('outline_model_id') ?? selectedModelId.value;
+    chapterModelId.value = _box.get('chapter_model_id') ?? selectedModelId.value;
   }
 
   void setApiKey(String value) {
@@ -486,5 +496,45 @@ class ApiConfigController extends GetxController {
   // 获取当前选中模型的所有变体
   List<String> getCurrentModelVariants() {
     return getModelVariants(selectedModelId.value);
+  }
+
+  void toggleDualModelMode(bool value) {
+    isDualModelMode.value = value;
+    if (value) {
+      // 如果开启双模型模式，默认使用当前选中的模型作为大纲模型
+      outlineModelId.value = selectedModelId.value;
+      chapterModelId.value = selectedModelId.value;
+    }
+    _saveConfig();
+  }
+
+  void updateOutlineModel(String modelId) {
+    outlineModelId.value = modelId;
+    _saveConfig();
+  }
+
+  void updateChapterModel(String modelId) {
+    chapterModelId.value = modelId;
+    _saveConfig();
+  }
+
+  ModelConfig getOutlineModel() {
+    return models.firstWhere(
+      (model) => model.name == outlineModelId.value,
+      orElse: () => getCurrentModel(),
+    );
+  }
+
+  ModelConfig getChapterModel() {
+    return models.firstWhere(
+      (model) => model.name == chapterModelId.value,
+      orElse: () => getCurrentModel(),
+    );
+  }
+
+  void _saveConfig() {
+    _box.put('dual_model_mode', isDualModelMode.value);
+    _box.put('outline_model_id', outlineModelId.value);
+    _box.put('chapter_model_id', chapterModelId.value);
   }
 } 

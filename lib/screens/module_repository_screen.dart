@@ -4,8 +4,6 @@ import 'package:novel_app/screens/genre_manager_screen.dart';
 import 'package:novel_app/screens/style_manager_screen.dart';
 import 'package:novel_app/screens/character_card_list_screen.dart';
 import 'package:novel_app/screens/character_type/character_type_screen.dart';
-import 'package:novel_app/screens/prompt_package_screen.dart';
-import 'package:novel_app/screens/prompt_management_screen.dart';
 
 class ModuleRepositoryScreen extends StatelessWidget {
   const ModuleRepositoryScreen({super.key});
@@ -49,20 +47,6 @@ class ModuleRepositoryScreen extends StatelessWidget {
             title: '角色类型',
             description: '管理角色类型和关系',
             onTap: () => Get.to(() => CharacterTypeScreen()),
-          ),
-          _buildModuleCard(
-            context,
-            icon: Icons.text_fields,
-            title: '提示词包管理',
-            description: '管理AI生成的提示词包',
-            onTap: () => Get.to(() => PromptPackageScreen()),
-          ),
-          _buildModuleCard(
-            context,
-            icon: Icons.auto_stories,
-            title: '提示词模板',
-            description: '管理小说生成的提示词模板',
-            onTap: () => Get.to(() => PromptManagementScreen()),
           ),
         ],
       ),

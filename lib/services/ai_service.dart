@@ -20,7 +20,32 @@ class AIService extends GetxService {
   final _retryInterval = const Duration(seconds: 1);  // 重试间隔
   final bool _isWeb = kIsWeb;  // 添加 Web 平台判断
 
+  // 添加临时配置变量
+  String? _tempApiKey;
+  String? _tempBaseUrl;
+  String? _tempApiPath;
+  String? _tempModel;
+  String? _tempApiFormat;
+  String? _tempAppId;
+
   AIService(this._apiConfig);
+
+  // 添加更新配置的方法
+  void updateConfig({
+    String? apiKey,
+    String? baseUrl,
+    String? apiPath,
+    String? model,
+    String? apiFormat,
+    String? appId,
+  }) {
+    _tempApiKey = apiKey;
+    _tempBaseUrl = baseUrl;
+    _tempApiPath = apiPath;
+    _tempModel = model;
+    _tempApiFormat = apiFormat;
+    _tempAppId = appId;
+  }
 
   Future<String> generateContent(String prompt) async {
     final completer = Completer<String>();
@@ -52,13 +77,22 @@ class AIService extends GetxService {
     int? maxTokens,
     double repetitionPenalty = 1.3,
   }) async* {
+    // 使用临时配置或默认配置
     final modelConfig = _apiConfig.getCurrentModel();
-    final apiKey = modelConfig.apiKey;
-    final apiUrl = modelConfig.apiUrl;
-    final apiPath = modelConfig.apiPath;
-    final model = modelConfig.model;
-    final apiFormat = modelConfig.apiFormat;
-    final appId = modelConfig.appId;
+    final apiKey = _tempApiKey ?? modelConfig.apiKey;
+    final apiUrl = _tempBaseUrl ?? modelConfig.apiUrl;
+    final apiPath = _tempApiPath ?? modelConfig.apiPath;
+    final model = _tempModel ?? modelConfig.model;
+    final apiFormat = _tempApiFormat ?? modelConfig.apiFormat;
+    final appId = _tempAppId ?? modelConfig.appId;
+
+    // 清除临时配置
+    _tempApiKey = null;
+    _tempBaseUrl = null;
+    _tempApiPath = null;
+    _tempModel = null;
+    _tempApiFormat = null;
+    _tempAppId = null;
 
     if (apiKey.isEmpty) {
       throw Exception('API Key not set');
