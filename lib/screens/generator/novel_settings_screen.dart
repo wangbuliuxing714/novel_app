@@ -7,6 +7,8 @@ import 'package:novel_app/services/character_type_service.dart';
 import 'package:novel_app/services/character_card_service.dart';
 import 'package:novel_app/models/character_card.dart';
 import 'package:novel_app/models/character_type.dart';
+import 'package:novel_app/controllers/knowledge_base_controller.dart';
+import 'package:novel_app/screens/knowledge_base_screen.dart';
 
 class NovelSettingsScreen extends StatefulWidget {
   const NovelSettingsScreen({Key? key}) : super(key: key);
@@ -21,6 +23,7 @@ class _NovelSettingsScreenState extends State<NovelSettingsScreen> {
   final GenreController _genreController = Get.find<GenreController>();
   final CharacterTypeService _characterTypeService = Get.find<CharacterTypeService>();
   final CharacterCardService _characterCardService = Get.find<CharacterCardService>();
+  final KnowledgeBaseController _knowledgeBaseController = Get.find<KnowledgeBaseController>();
   
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _backgroundController = TextEditingController();
@@ -68,28 +71,34 @@ class _NovelSettingsScreenState extends State<NovelSettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('小说生成设置'),
-        actions: [
-          TextButton(
-            onPressed: _saveSettings,
-            child: const Text('保存设置', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+        title: const Text('高级设置'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildBasicSettingsSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+            _buildChaptersSection(),
+            const SizedBox(height: 16),
             _buildGenreSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             _buildStyleSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             _buildCharacterSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+            _buildKnowledgeBaseSection(),
+            const SizedBox(height: 16),
             _buildAdvancedSettingsSection(),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              onPressed: _saveSettings,
+              child: const Text('保存设置'),
+            ),
           ],
         ),
       ),
@@ -141,6 +150,77 @@ class _NovelSettingsScreenState extends State<NovelSettingsScreen> {
             const SizedBox(height: 16),
             
             // 根据短篇小说选项显示不同的设置
+            Obx(() => _isShortNovel.value 
+              ? Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Text('短篇字数: '),
+                        Expanded(
+                          child: Slider(
+                            value: _shortNovelWordCount.value.toDouble(),
+                            min: 10000,
+                            max: 20000,
+                            divisions: 10,
+                            label: '${(_shortNovelWordCount.value / 10000).toStringAsFixed(1)}万字',
+                            onChanged: (value) => _shortNovelWordCount.value = value.toInt(),
+                          ),
+                        ),
+                        Text('${(_shortNovelWordCount.value / 10000).toStringAsFixed(1)}万字'),
+                      ],
+                    ),
+                  ],
+                )
+              : Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Text('章节数量: '),
+                        Expanded(
+                          child: Slider(
+                            value: _totalChapters.value.toDouble(),
+                            min: 1,
+                            max: 20,
+                            divisions: 19,
+                            label: _totalChapters.value.toString(),
+                            onChanged: (value) => _totalChapters.value = value.toInt(),
+                          ),
+                        ),
+                        Text(_totalChapters.value.toString()),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _useOutline.value,
+                          onChanged: (value) => _useOutline.value = value ?? true,
+                        ),
+                        const Text('使用大纲生成'),
+                        const Tooltip(
+                          message: '启用后，系统会先生成大纲再生成章节内容；禁用后，系统会直接生成章节内容',
+                          child: Icon(Icons.info_outline, size: 16),
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildChaptersSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('章节设置', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
             Obx(() => _isShortNovel.value 
               ? Column(
                   children: [
@@ -324,6 +404,94 @@ class _NovelSettingsScreenState extends State<NovelSettingsScreen> {
                 ));
               }).toList(),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildKnowledgeBaseSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('知识库设置', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                TextButton.icon(
+                  icon: const Icon(Icons.library_books),
+                  label: const Text('管理知识库'),
+                  onPressed: () => Get.to(() => KnowledgeBaseScreen()),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Obx(() => SwitchListTile(
+              title: const Text('使用知识库'),
+              subtitle: const Text('使用已有知识库内容辅助生成'),
+              value: _knowledgeBaseController.useKnowledgeBase.value,
+              onChanged: (value) {
+                _knowledgeBaseController.useKnowledgeBase.value = value;
+                _knowledgeBaseController.saveSettings();
+              },
+            )),
+            
+            // 仅当启用知识库时显示选择区域
+            Obx(() {
+              if (!_knowledgeBaseController.useKnowledgeBase.value) {
+                return const SizedBox.shrink();
+              }
+              
+              if (_knowledgeBaseController.documents.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('暂无知识文档，请先添加知识文档'),
+                );
+              }
+              
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Text('选择参考的知识库文档:'),
+                  ),
+                  Wrap(
+                    spacing: 8.0,
+                    runSpacing: 8.0,
+                    children: _knowledgeBaseController.documents.map((doc) {
+                      return Obx(() => FilterChip(
+                        label: Text(doc.title.length > 15 
+                            ? '${doc.title.substring(0, 15)}...' 
+                            : doc.title),
+                        selected: _knowledgeBaseController.selectedDocIds.contains(doc.id),
+                        onSelected: (selected) {
+                          _knowledgeBaseController.toggleDocumentSelection(doc.id);
+                        },
+                      ));
+                    }).toList(),
+                  ),
+                  
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          child: const Text('清除选择'),
+                          onPressed: () {
+                            _knowledgeBaseController.clearSelection();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            }),
           ],
         ),
       ),

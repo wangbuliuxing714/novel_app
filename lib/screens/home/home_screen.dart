@@ -17,6 +17,8 @@ import 'package:novel_app/controllers/style_controller.dart';
 import 'package:novel_app/services/character_type_service.dart';
 import 'package:novel_app/services/character_card_service.dart';
 import 'package:novel_app/screens/character_card_list_screen.dart';
+import 'package:novel_app/screens/knowledge_base_screen.dart';
+import 'package:novel_app/controllers/knowledge_base_controller.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -103,6 +105,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 Get.toNamed('/draft');
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.book),
+              title: const Text('知识库'),
+              onTap: () {
+                Get.back();
+                Get.to(() => KnowledgeBaseScreen());
+              },
+            ),
             const Divider(),
             ListTile(
               leading: Obx(() => Icon(
@@ -158,6 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             _buildGenreSelector(),
+            const SizedBox(height: 16),
+            _buildKnowledgeBaseToggle(),
             const SizedBox(height: 16),
             Card(
               child: Padding(
@@ -883,6 +895,75 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Text('确定'),
           ),
         ],
+      ),
+    );
+  }
+
+  // 添加知识库开关
+  Widget _buildKnowledgeBaseToggle() {
+    final knowledgeBaseController = Get.find<KnowledgeBaseController>();
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '知识库辅助',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Obx(() => Switch(
+                  value: knowledgeBaseController.useKnowledgeBase.value,
+                  onChanged: (value) {
+                    knowledgeBaseController.useKnowledgeBase.value = value;
+                    knowledgeBaseController.saveSettings();
+                    if (value && knowledgeBaseController.selectedDocIds.isEmpty) {
+                      Get.to(() => KnowledgeBaseScreen());
+                    }
+                  },
+                )),
+              ],
+            ),
+            Obx(() {
+              if (!knowledgeBaseController.useKnowledgeBase.value) {
+                return const SizedBox.shrink();
+              }
+              
+              final selectedCount = knowledgeBaseController.selectedDocIds.length;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        selectedCount > 0 
+                          ? '已选择 $selectedCount 个知识文档' 
+                          : '未选择知识文档',
+                        style: TextStyle(
+                          color: selectedCount > 0 ? Colors.green : Colors.red,
+                        ),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.edit),
+                        label: const Text('管理'),
+                        onPressed: () => Get.to(() => KnowledgeBaseScreen()),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            }),
+          ],
+        ),
       ),
     );
   }

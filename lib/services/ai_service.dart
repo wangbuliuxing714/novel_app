@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:novel_app/controllers/api_config_controller.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:novel_app/controllers/knowledge_base_controller.dart';
 
 enum AIModel {
   deepseek,
@@ -680,8 +681,17 @@ class AIService extends GetxService {
     final buffer = StringBuffer();
     
     try {
+      // 获取知识库控制器
+      final knowledgeBaseController = Get.find<KnowledgeBaseController>();
+      
+      // 如果启用了知识库，使用知识库内容丰富提示词
+      String finalPrompt = prompt;
+      if (knowledgeBaseController.useKnowledgeBase.value && knowledgeBaseController.selectedDocIds.isNotEmpty) {
+        finalPrompt = knowledgeBaseController.buildPromptWithKnowledge(prompt);
+      }
+      
       await for (final chunk in generateChapterTextStream(
-        systemPrompt: prompt,
+        systemPrompt: finalPrompt,
         userPrompt: "请根据以上要求生成章节内容",
         temperature: 0.7,
         maxTokens: 4000,
@@ -703,8 +713,17 @@ class AIService extends GetxService {
     final buffer = StringBuffer();
     
     try {
+      // 获取知识库控制器
+      final knowledgeBaseController = Get.find<KnowledgeBaseController>();
+      
+      // 如果启用了知识库，使用知识库内容丰富提示词
+      String finalPrompt = prompt;
+      if (knowledgeBaseController.useKnowledgeBase.value && knowledgeBaseController.selectedDocIds.isNotEmpty) {
+        finalPrompt = knowledgeBaseController.buildPromptWithKnowledge(prompt);
+      }
+      
       await for (final chunk in generateOutlineTextStream(
-        systemPrompt: prompt,
+        systemPrompt: finalPrompt,
         userPrompt: "请为我创建一个详细的短篇小说大纲，确保结构完整合理",
         temperature: 0.7,
         maxTokens: 3000, // 增加token上限以确保完整的五段式大纲
@@ -727,8 +746,17 @@ class AIService extends GetxService {
     final buffer = StringBuffer();
     
     try {
+      // 获取知识库控制器
+      final knowledgeBaseController = Get.find<KnowledgeBaseController>();
+      
+      // 如果启用了知识库，使用知识库内容丰富提示词
+      String finalPrompt = prompt;
+      if (knowledgeBaseController.useKnowledgeBase.value && knowledgeBaseController.selectedDocIds.isNotEmpty) {
+        finalPrompt = knowledgeBaseController.buildPromptWithKnowledge(prompt);
+      }
+      
       await for (final chunk in generateChapterTextStream(
-        systemPrompt: prompt,
+        systemPrompt: finalPrompt,
         userPrompt: "请根据以上要求创作一篇高质量的短篇小说内容",
         temperature: 0.78, // 提高创造性
         maxTokens: 8000, // 最大token上限

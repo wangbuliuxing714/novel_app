@@ -6,6 +6,7 @@ import 'package:novel_app/controllers/api_config_controller.dart';
 import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/screens/character_generator_screen.dart';
 import 'package:novel_app/screens/background_generator_screen.dart';
+import 'package:novel_app/screens/knowledge_base_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
@@ -50,6 +51,14 @@ class ToolsScreen extends StatelessWidget {
                   subtitle: const Text('自动生成故事背景和世界观'),
                   trailing: const Icon(Icons.arrow_forward_ios),
                   onTap: () => Get.to(() => const BackgroundGeneratorScreen()),
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.book),
+                  title: const Text('知识库管理'),
+                  subtitle: const Text('管理创作参考资料和知识'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () => Get.to(() => KnowledgeBaseScreen()),
                 ),
               ],
             ),

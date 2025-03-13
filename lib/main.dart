@@ -36,6 +36,7 @@ import 'package:novel_app/services/prompt_package_service.dart';
 import 'package:novel_app/controllers/prompt_package_controller.dart';
 import 'package:novel_app/services/character_generator_service.dart';
 import 'package:novel_app/services/background_generator_service.dart';
+import 'package:novel_app/controllers/knowledge_base_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -98,6 +99,9 @@ void main() async {
   
   // 初始化背景生成服务
   Get.put(BackgroundGeneratorService(aiService, promptPackageController));
+  
+  // 初始化知识库控制器
+  Get.put(KnowledgeBaseController());
   
   // 初始化公告服务
   final announcementService = Get.put(AnnouncementService());
