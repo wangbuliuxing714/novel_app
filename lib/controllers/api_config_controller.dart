@@ -132,11 +132,11 @@ class ApiConfigController extends GetxController {
   final RxInt maxTokens = 4000.obs;
   final RxDouble repetitionPenalty = 1.3.obs; // 添加重复惩罚参数的响应式变量
 
-  // 添加双模型模式的支持
+  // 添加双模型模式相关的变量
   final RxBool isDualModelMode = false.obs;
   final RxString outlineModelId = ''.obs;
   final RxString chapterModelId = ''.obs;
-  // 添加模型变体选择的支持
+  // 添加模型变体选择支持
   final RxString outlineModelVariant = ''.obs;
   final RxString chapterModelVariant = ''.obs;
 
@@ -150,7 +150,7 @@ class ApiConfigController extends GetxController {
       apiFormat: 'OpenAI API兼容',
     ),
     ModelConfig(
-      name: '硅基流动 DeepSeek',
+      name: '硅基流动',
       apiKey: '',
       apiUrl: 'https://api.siliconflow.cn',
       apiPath: '/v1/chat/completions',
@@ -166,11 +166,25 @@ class ApiConfigController extends GetxController {
       apiFormat: 'OpenAI API兼容',
     ),
     ModelConfig(
-      name: '通义千问',
+      name: '阿里百炼（通义）',
       apiKey: '',
       apiUrl: 'https://dashscope.aliyuncs.com',
       apiPath: '/compatible-mode/v1/chat/completions',
       model: 'qwen-turbo-2024-11-01',
+      modelVariants: [
+        'qwen2.5-7b-instruct-1m',  // 阿里云比较好用的模型
+        'deepseek-r1',             // 阿里云的deepseek标识符
+        'qwq-32b',                 // 阿里云推理模型
+        'qwq-plus-2025-03-05',     // 阿里云推理模型plus
+      ],
+      apiFormat: 'OpenAI API兼容',
+    ),
+    ModelConfig(
+      name: '火山引擎（豆包）',
+      apiKey: '',
+      apiUrl: 'https://ork.cn-beijing.volces.com',
+      apiPath: '/api/v3/chat/completions',
+      model: 'doupo-1-5-pro-256k-250115',
       apiFormat: 'OpenAI API兼容',
     ),
     ModelConfig(
@@ -186,9 +200,29 @@ class ApiConfigController extends GetxController {
       name: 'Gemini Pro',
       apiKey: '',
       apiUrl: 'https://generativelanguage.googleapis.com',
-      apiPath: '/v1/models/gemini-pro:streamGenerateContent',
+      apiPath: '/v1/models/gemini-pro:generateContent',
       model: 'gemini-pro',
       apiFormat: 'Google API',
+      modelVariants: [
+        'gemini-1.5-pro',
+        'gemini-1.5-flash',
+      ],
+    ),
+    
+    // 添加另一个可能通过镜像访问的Gemini
+    ModelConfig(
+      name: 'Gemini代理版',
+      apiKey: '',
+      apiUrl: 'https://gemini-proxy-api.vercel.app',
+      apiPath: '/v1/models/gemini-pro:generateContent',
+      model: 'gemini-pro',
+      apiFormat: 'Google API',
+      modelVariants: [
+        'gemini-1.5-pro',
+        'gemini-1.5-flash',
+        'gemini-2.0-flash-thinking-exp-01-21',
+        'gemini-2.0-flash-exp',
+      ],
     ),
   ];
 
@@ -217,20 +251,18 @@ class ApiConfigController extends GetxController {
   @override
   void onInit() async {
     super.onInit();
-    await _initHive();
-    _loadModels();
-    if (models.isNotEmpty) {
-      selectedModelId.value = models[0].name;
-      outlineModelId.value = models[0].name;
-      chapterModelId.value = models[0].name;
-      _updateCurrentModelConfig();
-    }
-    _loadConfig();
+    await _initializeBox();
   }
 
-  Future<void> _initHive() async {
-    await Hive.initFlutter();
+  Future<void> _initializeBox() async {
     _box = await Hive.openBox(_boxName);
+    _loadModels();
+    _loadConfig();
+    loadDualModelConfig(); // 加载双模型配置
+    // 在所有配置加载后执行修复
+    Future.delayed(Duration(milliseconds: 100), () {
+      _checkAndFixModelNames();
+    });
   }
 
   void _loadModels() {
@@ -265,7 +297,123 @@ class ApiConfigController extends GetxController {
   }
 
   ModelConfig getCurrentModel() {
-    return models.firstWhere((m) => m.name == selectedModelId.value);
+    if (selectedModelId.value.isEmpty) {
+      if (models.isNotEmpty) {
+        selectedModelId.value = models[0].name;
+      } else {
+        throw Exception('未找到可用的模型');
+      }
+    }
+
+    return models.firstWhere(
+      (model) => model.name == selectedModelId.value,
+      orElse: () => models.isNotEmpty ? models[0] : throw Exception('未找到可用的模型'),
+    );
+  }
+
+  // 获取大纲生成模型配置 (新增)
+  ModelConfig getOutlineModel() {
+    if (!isDualModelMode.value) {
+      return getCurrentModel();
+    }
+    
+    if (outlineModelId.value.isEmpty) {
+      outlineModelId.value = selectedModelId.value;
+    }
+
+    ModelConfig model = models.firstWhere(
+      (model) => model.name == outlineModelId.value,
+      orElse: () => getCurrentModel(),
+    );
+    
+    // 如果有指定变体且变体存在，切换到该变体
+    if (outlineModelVariant.value.isNotEmpty && 
+        model.modelVariants.contains(outlineModelVariant.value)) {
+      // 创建一个副本并修改模型标识符
+      return model.copyWith(model: outlineModelVariant.value);
+    }
+    
+    return model;
+  }
+
+  // 获取章节生成模型配置 (新增)
+  ModelConfig getChapterModel() {
+    if (!isDualModelMode.value) {
+      return getCurrentModel();
+    }
+    
+    if (chapterModelId.value.isEmpty) {
+      chapterModelId.value = selectedModelId.value;
+    }
+
+    ModelConfig model = models.firstWhere(
+      (model) => model.name == chapterModelId.value,
+      orElse: () => getCurrentModel(),
+    );
+    
+    // 如果有指定变体且变体存在，切换到该变体
+    if (chapterModelVariant.value.isNotEmpty && 
+        model.modelVariants.contains(chapterModelVariant.value)) {
+      // 创建一个副本并修改模型标识符
+      return model.copyWith(model: chapterModelVariant.value);
+    }
+    
+    return model;
+  }
+
+  // 保存双模型模式设置 (新增)
+  Future<void> saveDualModelConfig() async {
+    await _box.put('dual_model_mode', isDualModelMode.value);
+    await _box.put('outline_model_id', outlineModelId.value);
+    await _box.put('chapter_model_id', chapterModelId.value);
+    await _box.put('outline_model_variant', outlineModelVariant.value);
+    await _box.put('chapter_model_variant', chapterModelVariant.value);
+  }
+
+  // 载入双模型模式设置 (新增)
+  void loadDualModelConfig() {
+    isDualModelMode.value = _box.get('dual_model_mode', defaultValue: false);
+    outlineModelId.value = _box.get('outline_model_id', defaultValue: '');
+    chapterModelId.value = _box.get('chapter_model_id', defaultValue: '');
+    outlineModelVariant.value = _box.get('outline_model_variant', defaultValue: '');
+    chapterModelVariant.value = _box.get('chapter_model_variant', defaultValue: '');
+    
+    // 修复模型名称更改问题
+    if (outlineModelId.value == '通义千问') {
+      outlineModelId.value = '阿里百炼（通义）';
+      saveDualModelConfig();
+    }
+    
+    if (chapterModelId.value == '通义千问') {
+      chapterModelId.value = '阿里百炼（通义）';
+      saveDualModelConfig();
+    }
+  }
+  
+  // 当模型变体发生变化时同步更新相关配置
+  void updateModelVariants(String modelName, List<String> variants) {
+    // 更新模型变体列表
+    final index = models.indexWhere((m) => m.name == modelName);
+    if (index != -1) {
+      models[index] = models[index].copyWith(modelVariants: variants);
+      
+      // 如果当前大纲或章节模型是该模型，检查变体是否仍然有效
+      if (outlineModelId.value == modelName && 
+          outlineModelVariant.value.isNotEmpty && 
+          !variants.contains(outlineModelVariant.value)) {
+        // 变体不再存在，重置
+        outlineModelVariant.value = '';
+        saveDualModelConfig();
+      }
+      
+      if (chapterModelId.value == modelName && 
+          chapterModelVariant.value.isNotEmpty && 
+          !variants.contains(chapterModelVariant.value)) {
+        // 变体不再存在，重置
+        chapterModelVariant.value = '';
+        saveDualModelConfig();
+      }
+    }
   }
 
   void updateSelectedModel(String modelName) {
@@ -397,15 +545,21 @@ class ApiConfigController extends GetxController {
   }
 
   void _loadConfig() {
-    apiKey.value = _storage.read(_apiKeyKey) ?? '';
-    baseUrl.value = _storage.read(_baseUrlKey) ?? '';
-    ttsApiKey.value = _storage.read(_ttsApiKeyKey) ?? '';
-    isTextToSpeechMode.value = _storage.read(_configModeKey) ?? false;
-    isDualModelMode.value = _box.get('dual_model_mode') ?? false;
-    outlineModelId.value = _box.get('outline_model_id') ?? selectedModelId.value;
-    chapterModelId.value = _box.get('chapter_model_id') ?? selectedModelId.value;
-    outlineModelVariant.value = _box.get('outline_model_variant') ?? '';
-    chapterModelVariant.value = _box.get('chapter_model_variant') ?? '';
+    // 加载配置
+    final savedModelId = _box.get('selected_model');
+    if (savedModelId != null) {
+      selectedModelId.value = savedModelId;
+    } else if (models.isNotEmpty) {
+      selectedModelId.value = models[0].name;
+    }
+    
+    // 修复模型名称更改问题
+    if (selectedModelId.value == '通义千问') {
+      selectedModelId.value = '阿里百炼（通义）';
+      _box.put('selected_model', selectedModelId.value);
+    }
+    
+    _updateCurrentModelConfig();
   }
 
   void setApiKey(String value) {
@@ -442,6 +596,9 @@ class ApiConfigController extends GetxController {
       if (modelName == selectedModelId.value) {
         _updateCurrentModelConfig();
       }
+      
+      // 同步更新双模型模式中的模型变体选择
+      updateModelVariants(modelName, models[index].modelVariants);
     }
   }
   
@@ -459,6 +616,9 @@ class ApiConfigController extends GetxController {
         final mainModel = models[index].model;
         updateModelIdentifier(modelName, mainModel);
       }
+      
+      // 同步更新双模型模式中的模型变体选择
+      updateModelVariants(modelName, models[index].modelVariants);
     }
   }
   
@@ -503,85 +663,23 @@ class ApiConfigController extends GetxController {
     return getModelVariants(selectedModelId.value);
   }
 
-  void toggleDualModelMode(bool value) {
-    isDualModelMode.value = value;
-    if (value) {
-      // 如果开启双模型模式，默认使用当前选中的模型作为大纲模型
-      outlineModelId.value = selectedModelId.value;
-      chapterModelId.value = selectedModelId.value;
-      // 获取当前选中模型的标识符
-      final currentModel = getCurrentModel();
-      outlineModelVariant.value = currentModel.model;
-      chapterModelVariant.value = currentModel.model;
-    }
-    _saveConfig();
-  }
-
-  void updateOutlineModel(String modelId) {
-    outlineModelId.value = modelId;
-    // 更新模型后，设置默认变体为主模型标识符
-    final model = models.firstWhere((m) => m.name == modelId);
-    outlineModelVariant.value = model.model;
-    _saveConfig();
-  }
-
-  void updateChapterModel(String modelId) {
-    chapterModelId.value = modelId;
-    // 更新模型后，设置默认变体为主模型标识符
-    final model = models.firstWhere((m) => m.name == modelId);
-    chapterModelVariant.value = model.model;
-    _saveConfig();
-  }
-
-  // 添加更新大纲模型变体的方法
-  void updateOutlineModelVariant(String variant) {
-    outlineModelVariant.value = variant;
-    _saveConfig();
-  }
-
-  // 添加更新章节模型变体的方法
-  void updateChapterModelVariant(String variant) {
-    chapterModelVariant.value = variant;
-    _saveConfig();
-  }
-
-  ModelConfig getOutlineModel() {
-    ModelConfig model = models.firstWhere(
-      (model) => model.name == outlineModelId.value,
-      orElse: () => getCurrentModel(),
-    );
-    
-    // 如果设置了特定的模型变体，临时修改模型标识符
-    if (outlineModelVariant.value.isNotEmpty && 
-        (model.modelVariants.contains(outlineModelVariant.value) || 
-         model.model == outlineModelVariant.value)) {
-      return model.copyWith(model: outlineModelVariant.value);
+  // 添加一个检查并修复模型名称更改的函数
+  void _checkAndFixModelNames() {
+    // 检查并修复双模型模式中的模型引用
+    if (outlineModelId.value == '通义千问') {
+      outlineModelId.value = '阿里百炼（通义）';
+      saveDualModelConfig();
     }
     
-    return model;
-  }
-
-  ModelConfig getChapterModel() {
-    ModelConfig model = models.firstWhere(
-      (model) => model.name == chapterModelId.value,
-      orElse: () => getCurrentModel(),
-    );
-    
-    // 如果设置了特定的模型变体，临时修改模型标识符
-    if (chapterModelVariant.value.isNotEmpty && 
-        (model.modelVariants.contains(chapterModelVariant.value) || 
-         model.model == chapterModelVariant.value)) {
-      return model.copyWith(model: chapterModelVariant.value);
+    if (chapterModelId.value == '通义千问') {
+      chapterModelId.value = '阿里百炼（通义）';
+      saveDualModelConfig();
     }
     
-    return model;
-  }
-
-  void _saveConfig() {
-    _box.put('dual_model_mode', isDualModelMode.value);
-    _box.put('outline_model_id', outlineModelId.value);
-    _box.put('chapter_model_id', chapterModelId.value);
-    _box.put('outline_model_variant', outlineModelVariant.value);
-    _box.put('chapter_model_variant', chapterModelVariant.value);
+    // 检查当前选择的模型
+    if (selectedModelId.value == '通义千问') {
+      selectedModelId.value = '阿里百炼（通义）';
+      _box.put('selected_model', selectedModelId.value);
+    }
   }
 } 

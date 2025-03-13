@@ -419,6 +419,377 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 );
               }),
+              
+              // 添加双模型模式区域
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '双模型模式',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '开启后可分别选择用于大纲和章节生成的模型，实现高性能大纲生成和稳定章节生成',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Obx(() => SwitchListTile(
+                        title: const Text('启用双模型模式'),
+                        subtitle: const Text('分别为大纲和章节选择不同模型'),
+                        value: controller.isDualModelMode.value,
+                        onChanged: (value) {
+                          controller.isDualModelMode.value = value;
+                          controller.saveDualModelConfig();
+                        },
+                      )),
+                      
+                      Obx(() => controller.isDualModelMode.value 
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 16),
+                            const Text(
+                              '大纲生成模型',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              value: controller.outlineModelId.value.isEmpty 
+                                  ? controller.selectedModelId.value 
+                                  : controller.outlineModelId.value,
+                              decoration: const InputDecoration(
+                                labelText: '选择大纲生成模型',
+                                helperText: '推荐选择高性能模型，如GPT-4或Deepseek-Reasoner',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: controller.models.map((model) => DropdownMenuItem(
+                                value: model.name,
+                                child: Text(model.name),
+                              )).toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  controller.outlineModelId.value = value;
+                                  controller.outlineModelVariant.value = ''; // 清空之前的变体选择
+                                  controller.saveDualModelConfig();
+                                }
+                              },
+                            ),
+                            
+                            // 添加大纲模型变体选择
+                            Obx(() {
+                              // 获取当前选择的大纲模型
+                              final outlineModel = controller.models.firstWhere(
+                                (model) => model.name == (controller.outlineModelId.value.isEmpty 
+                                    ? controller.selectedModelId.value 
+                                    : controller.outlineModelId.value),
+                                orElse: () => controller.models.first,
+                              );
+                              
+                              // 如果该模型有变体，显示变体选择
+                              if (outlineModel.modelVariants.isNotEmpty) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 16.0),
+                                  child: DropdownButtonFormField<String>(
+                                    value: controller.outlineModelVariant.value.isEmpty 
+                                        ? outlineModel.model  // 默认使用模型当前值
+                                        : controller.outlineModelVariant.value,
+                                    decoration: const InputDecoration(
+                                      labelText: '选择大纲模型变体',
+                                      helperText: '不同的模型变体可能有不同的性能和特点',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    items: [
+                                      DropdownMenuItem(
+                                        value: outlineModel.model,
+                                        child: Text('${outlineModel.model} (默认)'),
+                                      ),
+                                      ...outlineModel.modelVariants.map((variant) => DropdownMenuItem(
+                                        value: variant,
+                                        child: Text(variant),
+                                      )).toList(),
+                                    ],
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        controller.outlineModelVariant.value = value;
+                                        controller.saveDualModelConfig();
+                                      }
+                                    },
+                                  ),
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            }),
+                            
+                            const SizedBox(height: 24),
+                            const Text(
+                              '章节生成模型',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              value: controller.chapterModelId.value.isEmpty 
+                                  ? controller.selectedModelId.value 
+                                  : controller.chapterModelId.value,
+                              decoration: const InputDecoration(
+                                labelText: '选择章节生成模型',
+                                helperText: '推荐选择稳定性高的模型，如Qwen或GPT-3.5',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: controller.models.map((model) => DropdownMenuItem(
+                                value: model.name,
+                                child: Text(model.name),
+                              )).toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  controller.chapterModelId.value = value;
+                                  controller.chapterModelVariant.value = ''; // 清空之前的变体选择
+                                  controller.saveDualModelConfig();
+                                }
+                              },
+                            ),
+                            
+                            // 添加章节模型变体选择
+                            Obx(() {
+                              // 获取当前选择的章节模型
+                              final chapterModel = controller.models.firstWhere(
+                                (model) => model.name == (controller.chapterModelId.value.isEmpty 
+                                    ? controller.selectedModelId.value 
+                                    : controller.chapterModelId.value),
+                                orElse: () => controller.models.first,
+                              );
+                              
+                              // 如果该模型有变体，显示变体选择
+                              if (chapterModel.modelVariants.isNotEmpty) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 16.0),
+                                  child: DropdownButtonFormField<String>(
+                                    value: controller.chapterModelVariant.value.isEmpty 
+                                        ? chapterModel.model  // 默认使用模型当前值
+                                        : controller.chapterModelVariant.value,
+                                    decoration: const InputDecoration(
+                                      labelText: '选择章节模型变体',
+                                      helperText: '不同的模型变体可能有不同的稳定性和生成风格',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    items: [
+                                      DropdownMenuItem(
+                                        value: chapterModel.model,
+                                        child: Text('${chapterModel.model} (默认)'),
+                                      ),
+                                      ...chapterModel.modelVariants.map((variant) => DropdownMenuItem(
+                                        value: variant,
+                                        child: Text(variant),
+                                      )).toList(),
+                                    ],
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        controller.chapterModelVariant.value = value;
+                                        controller.saveDualModelConfig();
+                                      }
+                                    },
+                                  ),
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            }),
+                          ],
+                        ) 
+                        : const SizedBox.shrink()
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // 添加双模型模式状态显示
+              Obx(() => controller.isDualModelMode.value ? Padding(
+                padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '双模型模式配置摘要',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        
+                        // 大纲模型信息
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RichText(
+                                text: TextSpan(
+                                  style: DefaultTextStyle.of(context).style,
+                                  children: [
+                                    const TextSpan(
+                                      text: '大纲生成: ', 
+                                      style: TextStyle(fontWeight: FontWeight.bold)
+                                    ),
+                                    TextSpan(
+                                      text: controller.outlineModelId.value.isEmpty
+                                          ? controller.selectedModelId.value
+                                          : controller.outlineModelId.value,
+                                    ),
+                                    if (controller.outlineModelVariant.value.isNotEmpty)
+                                      TextSpan(
+                                        text: ' (${controller.outlineModelVariant.value})',
+                                        style: const TextStyle(fontStyle: FontStyle.italic),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        
+                        // 章节模型信息
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RichText(
+                                text: TextSpan(
+                                  style: DefaultTextStyle.of(context).style,
+                                  children: [
+                                    const TextSpan(
+                                      text: '章节生成: ', 
+                                      style: TextStyle(fontWeight: FontWeight.bold)
+                                    ),
+                                    TextSpan(
+                                      text: controller.chapterModelId.value.isEmpty
+                                          ? controller.selectedModelId.value
+                                          : controller.chapterModelId.value,
+                                    ),
+                                    if (controller.chapterModelVariant.value.isNotEmpty)
+                                      TextSpan(
+                                        text: ' (${controller.chapterModelVariant.value})',
+                                        style: const TextStyle(fontStyle: FontStyle.italic),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ) : const SizedBox.shrink()),
+              
+              // 添加模型变体使用情况信息
+              Obx(() => controller.isDualModelMode.value ? Card(
+                margin: const EdgeInsets.only(top: 16.0),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '模型变体使用情况',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // 获取所有有变体的模型
+                      ...controller.models.where(
+                        (model) => model.modelVariants.isNotEmpty
+                      ).map((model) {
+                        final isOutlineModel = controller.outlineModelId.value == model.name;
+                        final isChapterModel = controller.chapterModelId.value == model.name;
+                        
+                        if (!isOutlineModel && !isChapterModel) {
+                          return const SizedBox.shrink();
+                        }
+                        
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              model.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            
+                            if (isOutlineModel) ...[
+                              Row(
+                                children: [
+                                  const Text('大纲生成: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  Text(controller.outlineModelVariant.value.isEmpty 
+                                      ? '使用默认 (${model.model})' 
+                                      : '使用变体 (${controller.outlineModelVariant.value})'),
+                                ],
+                              ),
+                            ],
+                            
+                            if (isChapterModel) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Text('章节生成: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  Text(controller.chapterModelVariant.value.isEmpty 
+                                      ? '使用默认 (${model.model})' 
+                                      : '使用变体 (${controller.chapterModelVariant.value})'),
+                                ],
+                              ),
+                            ],
+                            
+                            const SizedBox(height: 8),
+                            const Text('可用变体:', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 8,
+                              children: model.modelVariants.map((variant) => Chip(
+                                label: Text(variant),
+                                backgroundColor: variant == (isOutlineModel ? controller.outlineModelVariant.value : null) ||
+                                                variant == (isChapterModel ? controller.chapterModelVariant.value : null)
+                                    ? Colors.blue[100]
+                                    : Colors.grey[200],
+                              )).toList(),
+                            ),
+                            const Divider(),
+                          ],
+                        );
+                      }).toList(),
+                      
+                      if (controller.models.where((model) => model.modelVariants.isNotEmpty).isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: Text('没有找到模型变体。在模型列表中添加变体以启用此功能。'),
+                        ),
+                    ],
+                  ),
+                ),
+              ) : const SizedBox.shrink()),
             ],
           ),
         ),
@@ -434,194 +805,6 @@ class SettingsScreen extends StatelessWidget {
                     )),
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '双模型模式',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Obx(() => SwitchListTile(
-                      title: const Text('启用双模型模式'),
-                      subtitle: const Text('分别为大纲生成和章节生成使用不同的模型'),
-                      value: controller.isDualModelMode.value,
-                      onChanged: (value) => controller.toggleDualModelMode(value),
-                    )),
-                    const SizedBox(height: 16),
-                    Obx(() => Visibility(
-                      visible: controller.isDualModelMode.value,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '大纲生成模型',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            value: controller.outlineModelId.value,
-                            decoration: const InputDecoration(
-                              labelText: '选择大纲生成模型',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: controller.models.map((model) => DropdownMenuItem(
-                              value: model.name,
-                              child: Text(model.name),
-                            )).toList(),
-                            onChanged: (value) {
-                              if (value != null) {
-                                controller.updateOutlineModel(value);
-                              }
-                            },
-                          ),
-                          
-                          // 添加大纲模型变体选择
-                          const SizedBox(height: 8),
-                          Obx(() {
-                            // 获取当前选中的大纲模型
-                            final selectedModel = controller.models.firstWhere(
-                              (model) => model.name == controller.outlineModelId.value,
-                              orElse: () => controller.getCurrentModel(),
-                            );
-                            
-                            // 获取所有变体加上主模型标识符
-                            final allVariants = [selectedModel.model, ...selectedModel.modelVariants]
-                                .where((v) => v.isNotEmpty)
-                                .toSet()
-                                .toList();
-                            
-                            // 如果没有变体，不显示选择器
-                            if (allVariants.length <= 1) {
-                              return const SizedBox.shrink();
-                            }
-                            
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  '大纲生成模型变体',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                DropdownButtonFormField<String>(
-                                  value: controller.outlineModelVariant.value.isEmpty ? 
-                                      selectedModel.model : controller.outlineModelVariant.value,
-                                  decoration: const InputDecoration(
-                                    labelText: '选择大纲模型变体',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: allVariants.map((variant) => DropdownMenuItem(
-                                    value: variant,
-                                    child: Text(variant),
-                                  )).toList(),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      controller.updateOutlineModelVariant(value);
-                                    }
-                                  },
-                                ),
-                              ],
-                            );
-                          }),
-                          
-                          const SizedBox(height: 16),
-                          const Text(
-                            '章节生成模型',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            value: controller.chapterModelId.value,
-                            decoration: const InputDecoration(
-                              labelText: '选择章节生成模型',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: controller.models.map((model) => DropdownMenuItem(
-                              value: model.name,
-                              child: Text(model.name),
-                            )).toList(),
-                            onChanged: (value) {
-                              if (value != null) {
-                                controller.updateChapterModel(value);
-                              }
-                            },
-                          ),
-                          
-                          // 添加章节模型变体选择
-                          const SizedBox(height: 8),
-                          Obx(() {
-                            // 获取当前选中的章节模型
-                            final selectedModel = controller.models.firstWhere(
-                              (model) => model.name == controller.chapterModelId.value,
-                              orElse: () => controller.getCurrentModel(),
-                            );
-                            
-                            // 获取所有变体加上主模型标识符
-                            final allVariants = [selectedModel.model, ...selectedModel.modelVariants]
-                                .where((v) => v.isNotEmpty)
-                                .toSet()
-                                .toList();
-                            
-                            // 如果没有变体，不显示选择器
-                            if (allVariants.length <= 1) {
-                              return const SizedBox.shrink();
-                            }
-                            
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  '章节生成模型变体',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                DropdownButtonFormField<String>(
-                                  value: controller.chapterModelVariant.value.isEmpty ? 
-                                      selectedModel.model : controller.chapterModelVariant.value,
-                                  decoration: const InputDecoration(
-                                    labelText: '选择章节模型变体',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: allVariants.map((variant) => DropdownMenuItem(
-                                    value: variant,
-                                    child: Text(variant),
-                                  )).toList(),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      controller.updateChapterModelVariant(value);
-                                    }
-                                  },
-                                ),
-                              ],
-                            );
-                          }),
-                        ],
-                      ),
-                    )),
-                  ],
-                ),
               ),
             ),
           ],
@@ -1203,5 +1386,80 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // 当前模型变体使用情况
+  Widget _buildModelVariantUsageInfo(BuildContext context, ApiConfigController controller) {
+    final List<Widget> items = [];
+    
+    // 获取所有有变体的模型
+    final modelsWithVariants = controller.models.where(
+      (model) => model.modelVariants.isNotEmpty
+    ).toList();
+    
+    if (modelsWithVariants.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(8.0),
+        child: Text('没有找到模型变体。在模型列表中添加变体以启用此功能。'),
+      );
+    }
+    
+    for (final model in modelsWithVariants) {
+      items.add(
+        ExpansionTile(
+          title: Text(model.name),
+          subtitle: Text('${model.modelVariants.length}个可用变体'),
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('当前使用:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text('默认模型: ${model.model}'),
+                  
+                  if (controller.isDualModelMode.value) ...[
+                    const SizedBox(height: 8),
+                    
+                    // 当前大纲模型变体使用情况
+                    if (controller.outlineModelId.value == model.name) ...[
+                      const Text('大纲生成:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(controller.outlineModelVariant.value.isEmpty 
+                          ? '使用默认 (${model.model})' 
+                          : '使用变体 (${controller.outlineModelVariant.value})'),
+                    ],
+                    
+                    // 当前章节模型变体使用情况
+                    if (controller.chapterModelId.value == model.name) ...[
+                      const SizedBox(height: 4),
+                      const Text('章节生成:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(controller.chapterModelVariant.value.isEmpty 
+                          ? '使用默认 (${model.model})' 
+                          : '使用变体 (${controller.chapterModelVariant.value})'),
+                    ],
+                  ],
+                  
+                  const SizedBox(height: 8),
+                  const Text('可用变体:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    children: model.modelVariants.map((variant) => Chip(
+                      label: Text(variant),
+                      backgroundColor: Colors.grey[200],
+                    )).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+      
+      items.add(const Divider());
+    }
+    
+    return Column(children: items);
   }
 } 

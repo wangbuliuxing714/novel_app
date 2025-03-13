@@ -44,7 +44,7 @@ class HelpScreen extends StatelessWidget {
                 '提取码：xxxx',
                 '',
                 '文件包含：',
-                '• 通义千问API配置说明',
+                '• 阿里百炼（通义）API配置说明',
                 '• 硅基流动API配置说明',
                 '• API使用教程',
                 '',

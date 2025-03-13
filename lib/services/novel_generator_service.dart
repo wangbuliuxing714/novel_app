@@ -72,6 +72,7 @@ class NovelGeneratorService extends GetxService {
   final ApiConfigController _apiConfig;
   final CacheService _cacheService;
   final void Function(String)? onProgress;
+  final String targetReaders = "青年读者";
   final RxList<ParagraphInfo> _generatedParagraphs = <ParagraphInfo>[].obs;
   final RxInt _currentGeneratingChapter = 0.obs;
   final RxBool _isGenerating = false.obs;
@@ -94,13 +95,6 @@ class NovelGeneratorService extends GetxService {
   
   // 用于暂停和恢复生成
   final RxBool _shouldStop = false.obs;
-
-  // 添加必要的类成员变量
-  int totalChapters = 0;
-  String genre = '';
-  String theme = '';
-  String targetReaders = "青年读者";  // 移除 final 关键字
-  void Function(String)? onContent;
 
   NovelGeneratorService(
     this._aiService, 
@@ -158,20 +152,6 @@ class NovelGeneratorService extends GetxService {
     }
   }
 
-  // 更新初始化方法
-  void initializeNovelParameters({
-    required int chapters,
-    required String novelGenre,
-    required String novelTheme,
-    required String readers,
-  }) {
-    totalChapters = chapters;
-    genre = novelGenre;
-    theme = novelTheme;
-    targetReaders = readers;
-  }
-
-  // 更新生成大纲的方法
   Future<String> generateOutline({
     required String title,
     required String genre,
@@ -186,28 +166,6 @@ class NovelGeneratorService extends GetxService {
     List<CharacterType>? characterTypes,
   }) async {
     try {
-      // 初始化参数
-      initializeNovelParameters(
-        chapters: totalChapters,
-        novelGenre: genre,
-        novelTheme: theme,
-        readers: targetReaders,
-      );
-      this.onContent = onContent;  // 保存回调函数
-
-      // 如果启用了双模型模式，使用大纲生成模型
-      if (_apiConfig.isDualModelMode.value) {
-        final outlineModel = _apiConfig.getOutlineModel();
-        _aiService.updateConfig(
-          apiKey: outlineModel.apiKey,
-          baseUrl: outlineModel.apiUrl,
-          apiPath: outlineModel.apiPath,
-          model: outlineModel.model,
-          apiFormat: outlineModel.apiFormat,
-          appId: outlineModel.appId,
-        );
-      }
-
       if (isShortNovel) {
         _updateProgress("正在生成短篇小说大纲...");
       } else {
@@ -304,7 +262,9 @@ ${outlineFormatPrompt}
       
       // 一次性生成所有章节的大纲
       String outlineContent = '';
-      await for (final chunk in _aiService.generateTextStream(
+      
+      // 修改为使用专门的大纲生成方法，对接大纲模型
+      await for (final chunk in _aiService.generateOutlineTextStream(
         systemPrompt: prompt,
         userPrompt: outlinePrompt,
         maxTokens: _getMaxTokensForChapter(0) * 2, // 增加token限制以容纳完整大纲
@@ -330,56 +290,48 @@ ${outlineFormatPrompt}
       return outlineContent;
     } catch (e) {
       print('生成大纲失败: $e');
-      rethrow;
+      throw Exception('生成大纲失败: $e');
     }
   }
 
-  // 更新生成章节的方法
   Future<Chapter> generateChapter({
     required String title,
+    required int number,
     required String outline,
-    required int chapterIndex,
-    required String chapterTitle,
-    required String previousChapterSummary,
-    String? characterPrompt,
+    required List<Chapter> previousChapters,
+    required int totalChapters,
+    required String genre,
+    required String theme,
+    required String targetReaders,
     void Function(String)? onProgress,
     void Function(String)? onContent,
   }) async {
     try {
-      this.onContent = onContent;  // 保存回调函数
-
-      // 如果启用了双模型模式，使用章节生成模型
-      if (_apiConfig.isDualModelMode.value) {
-        final chapterModel = _apiConfig.getChapterModel();
-        _aiService.updateConfig(
-          apiKey: chapterModel.apiKey,
-          baseUrl: chapterModel.apiUrl,
-          apiPath: chapterModel.apiPath,
-          model: chapterModel.model,
-          apiFormat: chapterModel.apiFormat,
-          appId: chapterModel.appId,
-        );
-      }
-
-      _updateProgress("正在生成第${chapterIndex + 1}章...");
-      
       // 清理之前可能失败的缓存
       clearFailedGenerationCache();
       
       // 检查是否有缓存
-      final chapterKey = 'chapter_${title}_${chapterIndex + 1}';
+      final chapterKey = 'chapter_${title}_$number';
       final cachedContent = await _checkCache(chapterKey);
       if (cachedContent != null && cachedContent.isNotEmpty) {
         print('使用缓存的章节内容: $chapterKey');
         return Chapter(
-          number: chapterIndex + 1,
-          title: chapterTitle,
+          number: number,
+          title: _extractChapterTitle(cachedContent, number),
           content: cachedContent,
         );
       }
       
       // 解析大纲，提取当前章节的要求
       final chapterPlans = _parseOutline(outline);
+      
+      // 构建章节上下文
+      final context = _buildChapterContext(
+        outline: outline,
+        previousChapters: previousChapters,
+        currentNumber: number,
+        totalChapters: totalChapters,
+      );
       
       // 获取提示词包内容
       final promptPackageController = Get.find<PromptPackageController>();
@@ -388,8 +340,11 @@ ${outlineFormatPrompt}
       final chapterPrompt = promptPackageController.getCurrentPromptContent('chapter');
       final targetReaderPrompt = promptPackageController.getTargetReaderPromptContent(novelController.targetReader.value);
       
+      // 获取章节标题
+      final chapterTitle = chapterPlans[number]?['title'] ?? '第$number章';
+      
       // 设置当前风格
-      style = _determineStyle(chapterIndex + 1, totalChapters, null);
+      style = _determineStyle(number, totalChapters, null);
       
       // 构建提示词
       final systemPrompt = '''
@@ -400,16 +355,10 @@ ${ChapterGeneration.getSystemPrompt(style)}
       
       final userPrompt = ChapterGeneration.getChapterPrompt(
         title: title,
-        chapterNumber: chapterIndex + 1,
+        chapterNumber: number,
         totalChapters: totalChapters,
         outline: outline,
-        previousChapters: [
-          Chapter(
-            number: chapterIndex,
-            title: chapterTitle,
-            content: previousChapterSummary,
-          )
-        ],
+        previousChapters: previousChapters,
         genre: genre,
         theme: theme,
         style: style,
@@ -420,16 +369,18 @@ ${ChapterGeneration.getSystemPrompt(style)}
       final buffer = StringBuffer();
       String currentParagraph = '';
       
-      onProgress?.call('正在生成第${chapterIndex + 1}章...');
+      onProgress?.call('正在生成第$number章...');
       
       // 确保回调函数被调用
-      onContent?.call('\n开始生成第${chapterIndex + 1}章内容...\n');
+      if (onContent != null) {
+        onContent('\n开始生成第$number章内容...\n');
+      }
       
       await for (final chunk in _aiService.generateTextStream(
         systemPrompt: systemPrompt,
         userPrompt: userPrompt,
-        maxTokens: _getMaxTokensForChapter(chapterIndex + 1),
-        temperature: _getTemperatureForChapter(chapterIndex + 1, totalChapters),
+        maxTokens: _getMaxTokensForChapter(number),
+        temperature: _getTemperatureForChapter(number, totalChapters),
       )) {
         // 检查是否暂停
         await _checkPause();
@@ -457,7 +408,7 @@ ${ChapterGeneration.getSystemPrompt(style)}
               final processedParagraph = await _handleParagraphGeneration(
                 paragraph,
                 title: title,
-                chapterNumber: chapterIndex + 1,
+                chapterNumber: number,
                 outline: outline,
                 context: {
                   'currentContext': buffer.toString(),
@@ -479,7 +430,7 @@ ${ChapterGeneration.getSystemPrompt(style)}
       await _cacheContent(chapterKey, buffer.toString());
       
       return Chapter(
-        number: chapterIndex + 1,
+        number: number,
         title: chapterTitle,
         content: buffer.toString(),
       );
@@ -490,18 +441,21 @@ ${ChapterGeneration.getSystemPrompt(style)}
         print('网络错误，尝试重新生成章节');
         return generateChapter(
           title: title,
+          number: number,
           outline: outline,
-          chapterIndex: chapterIndex,
-          chapterTitle: chapterTitle,
-          previousChapterSummary: previousChapterSummary,
+          previousChapters: previousChapters,
+          totalChapters: totalChapters,
+          genre: genre,
+          theme: theme,
+          targetReaders: targetReaders,
           onProgress: onProgress,
-          onContent: onContent,  // 传递 onContent 参数
+          onContent: onContent,
         );
       }
       
       return Chapter(
-        number: chapterIndex + 1,
-        title: '第${chapterIndex + 1}章',
+        number: number,
+        title: '第$number章',
         content: '生成失败: $e',
       );
     }
@@ -2622,9 +2576,13 @@ ${chapterPrompt.isNotEmpty ? chapterPrompt + '\n\n' : ''}
       final cachedContent = await _checkCache(chapterKey);
       if (cachedContent != null && cachedContent.isNotEmpty) {
         print('使用缓存的章节内容: $chapterKey');
+        if (onContent != null) {
+          onContent('使用缓存内容...');
+          onContent(cachedContent);
+        }
         return cachedContent;
       }
-
+      
       // 从大纲中提取当前章节的信息
       String chapterTitle = '第$chapterNumber章';
       String chapterOutline = '';
@@ -2790,6 +2748,7 @@ ${chapterPrompt.isNotEmpty ? chapterPrompt + '\n\n' : ''}
       
       // 根据目标读者选择不同的提示词
       String chapterGenPrompt;
+      
       if (novelController.targetReader.value == '女性向') {
         // 使用女性向提示词
         chapterGenPrompt = FemalePrompts.getChapterPrompt(
@@ -2830,7 +2789,8 @@ ${chapterGenPrompt}
       
       // 生成章节内容
       String content = '';
-      await for (final chunk in _aiService.generateTextStream(
+      // 使用专门的章节生成方法，对接章节模型
+      await for (final chunk in _aiService.generateChapterTextStream(
         systemPrompt: prompt,
         userPrompt: '请开始创作第$chapterNumber章的内容',
         maxTokens: _getMaxTokensForChapter(chapterNumber),
@@ -2857,7 +2817,7 @@ ${chapterGenPrompt}
       return content;
     } catch (e) {
       print('生成章节失败: $e');
-      rethrow;
+      throw Exception('生成章节内容失败: $e');
     }
   }
 

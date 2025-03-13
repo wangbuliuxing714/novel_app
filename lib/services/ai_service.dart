@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:novel_app/controllers/api_config_controller.dart';
@@ -20,32 +21,7 @@ class AIService extends GetxService {
   final _retryInterval = const Duration(seconds: 1);  // 重试间隔
   final bool _isWeb = kIsWeb;  // 添加 Web 平台判断
 
-  // 添加临时配置变量
-  String? _tempApiKey;
-  String? _tempBaseUrl;
-  String? _tempApiPath;
-  String? _tempModel;
-  String? _tempApiFormat;
-  String? _tempAppId;
-
   AIService(this._apiConfig);
-
-  // 添加更新配置的方法
-  void updateConfig({
-    String? apiKey,
-    String? baseUrl,
-    String? apiPath,
-    String? model,
-    String? apiFormat,
-    String? appId,
-  }) {
-    _tempApiKey = apiKey;
-    _tempBaseUrl = baseUrl;
-    _tempApiPath = apiPath;
-    _tempModel = model;
-    _tempApiFormat = apiFormat;
-    _tempAppId = appId;
-  }
 
   Future<String> generateContent(String prompt) async {
     final completer = Completer<String>();
@@ -76,147 +52,247 @@ class AIService extends GetxService {
     double topP = 1.0,
     int? maxTokens,
     double repetitionPenalty = 1.3,
+    ModelConfig? specificModelConfig,
   }) async* {
-    // 使用临时配置或默认配置
-    final modelConfig = _apiConfig.getCurrentModel();
-    final apiKey = _tempApiKey ?? modelConfig.apiKey;
-    final apiUrl = _tempBaseUrl ?? modelConfig.apiUrl;
-    final apiPath = _tempApiPath ?? modelConfig.apiPath;
-    final model = _tempModel ?? modelConfig.model;
-    final apiFormat = _tempApiFormat ?? modelConfig.apiFormat;
-    final appId = _tempAppId ?? modelConfig.appId;
-
-    // 清除临时配置
-    _tempApiKey = null;
-    _tempBaseUrl = null;
-    _tempApiPath = null;
-    _tempModel = null;
-    _tempApiFormat = null;
-    _tempAppId = null;
+    final modelConfig = specificModelConfig ?? _apiConfig.getCurrentModel();
+    final apiKey = modelConfig.apiKey;
+    final apiUrl = modelConfig.apiUrl;
+    final apiPath = modelConfig.apiPath;
+    final model = modelConfig.model;
+    final apiFormat = modelConfig.apiFormat;
+    final appId = modelConfig.appId;
 
     if (apiKey.isEmpty) {
-      throw Exception('API Key not set');
+      throw Exception('API密钥未设置');
     }
 
     final client = http.Client();
     final uri = Uri.parse('$apiUrl$apiPath');
-
-    try {
-      final Map<String, dynamic> body = apiFormat == 'Google API'
-          ? {
-              'contents': [
-                {
-                  'role': 'user',
-                  'parts': [
-                    {'text': '$systemPrompt\n\n$userPrompt'}
-                  ]
-                }
-              ],
-              'generationConfig': {
-                'temperature': temperature,
-                'topP': topP,
-                'maxOutputTokens': maxTokens,
-                'repetitionPenalty': repetitionPenalty,
-              },
-              'safetySettings': [
-                {
-                  'category': 'HARM_CATEGORY_HARASSMENT',
-                  'threshold': 'BLOCK_NONE'
-                },
-                {
-                  'category': 'HARM_CATEGORY_HATE_SPEECH',
-                  'threshold': 'BLOCK_NONE'
-                },
-                {
-                  'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                  'threshold': 'BLOCK_NONE'
-                },
-                {
-                  'category': 'HARM_CATEGORY_DANGEROUS_CONTENT',
-                  'threshold': 'BLOCK_NONE'
-                }
-              ]
-            }
-          : {
-              'messages': [
-                {
-                  'role': 'system',
-                  'content': systemPrompt,
-                },
-                {
-                  'role': 'user',
-                  'content': userPrompt,
-                }
-              ],
-              'model': model,
-              'temperature': temperature,
-              'top_p': topP,
-              'max_tokens': maxTokens,
-              'presence_penalty': 0,
-              'frequency_penalty': repetitionPenalty,
-              'stream': true,
-            };
-
-      Map<String, String> headers = {
-        'Content-Type': 'application/json',
-      };
-
-      if (apiFormat == 'Google API') {
-        headers['x-goog-api-key'] = apiKey;
-      } else if (appId.isNotEmpty) {
-        headers['X-Bce-Authorization'] = apiKey;
-        headers['X-Appid'] = appId;
-      } else {
-        headers['Authorization'] = 'Bearer $apiKey';
-      }
-
-      final request = http.Request('POST', uri)
-        ..headers.addAll(headers)
-        ..body = jsonEncode(body);
-
-      final streamedResponse = await client.send(request);
-
-      if (streamedResponse.statusCode != 200) {
-        final errorBody = await streamedResponse.stream.bytesToString();
-        throw Exception('API request failed with status ${streamedResponse.statusCode}: $errorBody');
-      }
-
-      await for (final chunk in streamedResponse.stream.transform(utf8.decoder)) {
-        if (chunk.trim().isEmpty) continue;
-
+    int retryCount = 0;
+    const maxRetries = 3; // 最大重试次数
+    
+    while (true) {
+      try {
+        // 添加调试日志
+        print('===== API调用信息 =====');
+        print('API格式: $apiFormat');
+        print('API URL: $apiUrl$apiPath');
+        print('模型: $model');
+        print('重试次数: $retryCount');
+        
+        final Map<String, dynamic> body;
+        
+        // 根据不同API格式构建请求体
         if (apiFormat == 'Google API') {
-          final data = jsonDecode(chunk);
-          if (data['candidates'] != null &&
-              data['candidates'][0]['content'] != null &&
-              data['candidates'][0]['content']['parts'] != null &&
-              data['candidates'][0]['content']['parts'][0]['text'] != null) {
-            yield data['candidates'][0]['content']['parts'][0]['text'];
+          body = {
+            'contents': [
+              {
+                'role': 'user',
+                'parts': [
+                  {'text': '$systemPrompt\n\n$userPrompt'}
+                ]
+              }
+            ],
+            'generationConfig': {
+              'temperature': temperature,
+              'topP': topP,
+              'maxOutputTokens': maxTokens ?? 4000,
+              'repetitionPenalty': repetitionPenalty,
+            },
+            'safetySettings': [
+              {
+                'category': 'HARM_CATEGORY_HARASSMENT',
+                'threshold': 'BLOCK_NONE'
+              },
+              {
+                'category': 'HARM_CATEGORY_HATE_SPEECH',
+                'threshold': 'BLOCK_NONE'
+              },
+              {
+                'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                'threshold': 'BLOCK_NONE'
+              },
+              {
+                'category': 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                'threshold': 'BLOCK_NONE'
+              }
+            ]
+          };
+          
+          // 判断是否使用流式处理，如果API路径中包含stream则添加
+          if (!apiPath.contains('stream')) {
+            body['stream'] = true;
           }
         } else {
-          final lines = chunk.split('\n');
-          for (final line in lines) {
-            if (line.startsWith('data: ')) {
-              final data = line.substring(6);
-              if (data == '[DONE]') continue;
-              
+          body = {
+            'messages': [
+              {
+                'role': 'system',
+                'content': systemPrompt,
+              },
+              {
+                'role': 'user',
+                'content': userPrompt,
+              }
+            ],
+            'model': model,
+            'temperature': temperature,
+            'top_p': topP,
+            'max_tokens': maxTokens,
+            'presence_penalty': 0,
+            'frequency_penalty': repetitionPenalty,
+            'stream': true,
+          };
+        }
+
+        Map<String, String> headers = {
+          'Content-Type': 'application/json',
+        };
+
+        // 设置不同API的认证头
+        if (apiFormat == 'Google API') {
+          // Google API使用API密钥而不是Bearer令牌
+          headers['x-goog-api-key'] = apiKey;
+        } else if (appId.isNotEmpty) {
+          // 百度千帆API需要额外的appId
+          headers['X-Bce-Authorization'] = apiKey;
+          headers['X-Appid'] = appId;
+        } else {
+          // 默认使用Bearer认证（OpenAI兼容API）
+          headers['Authorization'] = 'Bearer $apiKey';
+        }
+
+        final request = http.Request('POST', uri)
+          ..headers.addAll(headers)
+          ..body = jsonEncode(body);
+
+        // 设置更长的超时时间
+        final streamedResponse = await client.send(request).timeout(
+          Duration(seconds: 30 + (retryCount * 5)), // 随着重试次数增加超时时间
+          onTimeout: () {
+            throw TimeoutException('API请求超时，请检查网络连接');
+          },
+        );
+
+        // 记录响应状态
+        print('===== API响应状态 =====');
+        print('状态码: ${streamedResponse.statusCode}');
+        print('响应头: ${streamedResponse.headers}');
+
+        if (streamedResponse.statusCode != 200) {
+          final errorBody = await streamedResponse.stream.bytesToString();
+          print('错误响应内容: $errorBody');
+          
+          // 如果是服务器错误且未超过最大重试次数，则重试
+          if (streamedResponse.statusCode >= 500 && retryCount < maxRetries) {
+            retryCount++;
+            await Future.delayed(Duration(seconds: 2 * retryCount)); // 指数退避
+            continue; // 重试
+          }
+          
+          throw Exception('API请求失败，状态码: ${streamedResponse.statusCode}，错误: $errorBody');
+        }
+
+        // 处理流式响应
+        await for (final chunk in streamedResponse.stream.transform(utf8.decoder)) {
+          if (chunk.trim().isEmpty) continue;
+
+          // 记录接收到的数据块（仅供调试）
+          if (apiFormat == 'Google API') {
+            print('===== Gemini 响应数据块 =====');
+            print(chunk.substring(0, chunk.length > 100 ? 100 : chunk.length) + '...');
+          }
+
+          try {
+            if (apiFormat == 'Google API') {
+              // 处理Gemini响应
               try {
-                final json = jsonDecode(data);
-                if (json['choices'] != null &&
-                    json['choices'][0]['delta'] != null &&
-                    json['choices'][0]['delta']['content'] != null) {
-                  yield json['choices'][0]['delta']['content'];
+                final data = jsonDecode(chunk);
+                
+                // 检查是否有错误
+                if (data['error'] != null) {
+                  print('Gemini API错误: ${data['error']}');
+                  continue;
+                }
+                
+                // 获取内容
+                if (data['candidates'] != null && data['candidates'].isNotEmpty) {
+                  var candidate = data['candidates'][0];
+                  
+                  // 检查是否有内容更新
+                  if (candidate['content'] != null && 
+                      candidate['content']['parts'] != null && 
+                      candidate['content']['parts'].isNotEmpty) {
+                    
+                    var text = candidate['content']['parts'][0]['text'];
+                    if (text != null && text.toString().isNotEmpty) {
+                      yield text.toString();
+                    }
+                  }
                 }
               } catch (e) {
-                print('Error parsing JSON: $e');
+                print('解析Gemini响应失败: $e');
+                print('原始数据: ${chunk.length > 500 ? chunk.substring(0, 500) + "..." : chunk}');
                 continue;
               }
+            } else {
+              // 处理OpenAI兼容API响应
+              final lines = chunk.split('\n');
+              for (final line in lines) {
+                if (line.startsWith('data: ')) {
+                  final data = line.substring(6);
+                  if (data == '[DONE]') continue;
+                  
+                  try {
+                    final json = jsonDecode(data);
+                    if (json['choices'] != null &&
+                        json['choices'][0]['delta'] != null &&
+                        json['choices'][0]['delta']['content'] != null) {
+                      yield json['choices'][0]['delta']['content'];
+                    }
+                  } catch (e) {
+                    print('解析JSON失败: $e');
+                    print('原始数据: $data');
+                    continue;
+                  }
+                }
+              }
             }
+          } catch (e) {
+            print('处理响应数据块出错: $e');
+            // 继续处理下一个数据块
           }
         }
+        
+        // 如果成功处理了所有响应，退出循环
+        break;
+        
+      } catch (e) {
+        print('API调用出错: $e');
+        
+        // 连接错误时进行重试
+        if ((e is SocketException || e is TimeoutException) && retryCount < maxRetries) {
+          retryCount++;
+          print('第 $retryCount 次重试...');
+          await Future.delayed(Duration(seconds: 2 * retryCount)); // 指数退避
+          continue;
+        }
+        
+        // 转换Gemini特定错误为更友好的消息
+        if (e.toString().contains('generativelanguage.googleapis.com')) {
+          throw Exception('无法连接到Google Gemini API，这可能是由于网络问题导致的。请尝试使用"Gemini代理版"模型，或使用其他模型。');
+        }
+        
+        // 重新抛出其他错误
+        rethrow;
+      } finally {
+        if (retryCount >= maxRetries) {
+          client.close();
+        }
       }
-    } finally {
-      client.close();
     }
+    
+    client.close();
   }
 
   Future<http.StreamedResponse> _postWithRetry({
@@ -604,7 +680,7 @@ class AIService extends GetxService {
     final buffer = StringBuffer();
     
     try {
-      await for (final chunk in generateTextStream(
+      await for (final chunk in generateChapterTextStream(
         systemPrompt: prompt,
         userPrompt: "请根据以上要求生成章节内容",
         temperature: 0.7,
@@ -627,7 +703,7 @@ class AIService extends GetxService {
     final buffer = StringBuffer();
     
     try {
-      await for (final chunk in generateTextStream(
+      await for (final chunk in generateOutlineTextStream(
         systemPrompt: prompt,
         userPrompt: "请为我创建一个详细的短篇小说大纲，确保结构完整合理",
         temperature: 0.7,
@@ -651,7 +727,7 @@ class AIService extends GetxService {
     final buffer = StringBuffer();
     
     try {
-      await for (final chunk in generateTextStream(
+      await for (final chunk in generateChapterTextStream(
         systemPrompt: prompt,
         userPrompt: "请根据以上要求创作一篇高质量的短篇小说内容",
         temperature: 0.78, // 提高创造性
@@ -668,6 +744,48 @@ class AIService extends GetxService {
     }
     
     return completer.future;
+  }
+
+  // 使用大纲模型生成内容
+  Stream<String> generateOutlineTextStream({
+    required String systemPrompt,
+    required String userPrompt,
+    double? temperature,
+    double? topP,
+    int? maxTokens,
+    double? repetitionPenalty,
+  }) async* {
+    final outlineModel = _apiConfig.getOutlineModel();
+    yield* generateTextStream(
+      systemPrompt: systemPrompt,
+      userPrompt: userPrompt,
+      temperature: temperature ?? outlineModel.temperature,
+      topP: topP ?? outlineModel.topP,
+      maxTokens: maxTokens ?? outlineModel.maxTokens,
+      repetitionPenalty: repetitionPenalty ?? outlineModel.repetitionPenalty,
+      specificModelConfig: outlineModel,
+    );
+  }
+
+  // 使用章节模型生成内容
+  Stream<String> generateChapterTextStream({
+    required String systemPrompt,
+    required String userPrompt,
+    double? temperature,
+    double? topP,
+    int? maxTokens,
+    double? repetitionPenalty,
+  }) async* {
+    final chapterModel = _apiConfig.getChapterModel();
+    yield* generateTextStream(
+      systemPrompt: systemPrompt,
+      userPrompt: userPrompt,
+      temperature: temperature ?? chapterModel.temperature,
+      topP: topP ?? chapterModel.topP,
+      maxTokens: maxTokens ?? chapterModel.maxTokens,
+      repetitionPenalty: repetitionPenalty ?? chapterModel.repetitionPenalty,
+      specificModelConfig: chapterModel,
+    );
   }
 
   void dispose() {
