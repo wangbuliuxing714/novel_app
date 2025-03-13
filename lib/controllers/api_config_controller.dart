@@ -102,7 +102,8 @@ class ModelConfig {
   
   // 添加模型变体
   void addModelVariant(String variant) {
-    if (!modelVariants.contains(variant) && variant.isNotEmpty) {
+    // 不添加空字符串、与主模型相同的标识符或已存在的变体
+    if (variant.isNotEmpty && variant != model && !modelVariants.contains(variant)) {
       modelVariants.add(variant);
     }
   }
@@ -123,6 +124,11 @@ class ModelConfig {
 class ApiConfigController extends GetxController {
   static const _boxName = 'api_config';
   static const _customModelsKey = 'custom_models';
+  static const _dualModeEnabledKey = 'dual_mode_enabled';
+  static const _outlineModelIdKey = 'outline_model_id';
+  static const _chapterModelIdKey = 'chapter_model_id';
+  static const _outlineModelVariantKey = 'outline_model_variant';
+  static const _chapterModelVariantKey = 'chapter_model_variant';
   late final Box<dynamic> _box;
   
   final RxString selectedModelId = ''.obs;
@@ -130,7 +136,14 @@ class ApiConfigController extends GetxController {
   final RxDouble temperature = 0.7.obs;
   final RxDouble topP = 1.0.obs;
   final RxInt maxTokens = 4000.obs;
-  final RxDouble repetitionPenalty = 1.3.obs; // 添加重复惩罚参数的响应式变量
+  final RxDouble repetitionPenalty = 1.3.obs;
+
+  // 添加双模型模式相关的状态
+  final RxBool isDualModeEnabled = false.obs;
+  final RxString outlineModelId = ''.obs;
+  final RxString chapterModelId = ''.obs;
+  final RxString outlineModelVariant = ''.obs; // 添加大纲模型变体
+  final RxString chapterModelVariant = ''.obs; // 添加章节模型变体
 
   final List<ModelConfig> _defaultModels = [
     ModelConfig(
@@ -211,11 +224,13 @@ class ApiConfigController extends GetxController {
     super.onInit();
     await _initHive();
     _loadModels();
+    _cleanupModelVariants(); // 清理重复的模型变体
     if (models.isNotEmpty) {
       selectedModelId.value = models[0].name;
       _updateCurrentModelConfig();
     }
     _loadConfig();
+    _loadDualModeConfig(); // 加载双模型模式配置
   }
 
   Future<void> _initHive() async {
@@ -244,6 +259,9 @@ class ApiConfigController extends GetxController {
         models[i] = ModelConfig.fromJson(Map<String, dynamic>.from(savedConfig));
       }
     }
+
+    // 在加载模型后清理重复的变体
+    _cleanupModelVariants();
   }
 
   void _updateCurrentModelConfig() {
@@ -419,13 +437,16 @@ class ApiConfigController extends GetxController {
     
     final index = models.indexWhere((m) => m.name == modelName);
     if (index != -1) {
-      // 添加变体到模型
-      models[index].addModelVariant(variant);
-      await _box.put(modelName, models[index].toJson());
-      
-      // 如果是当前选中的模型，更新当前模型配置
-      if (modelName == selectedModelId.value) {
-        _updateCurrentModelConfig();
+      // 确保不添加重复的变体，包括和主模型标识符相同的变体
+      if (models[index].model != variant && !models[index].modelVariants.contains(variant)) {
+        // 添加变体到模型
+        models[index].addModelVariant(variant);
+        await _box.put(modelName, models[index].toJson());
+        
+        // 如果是当前选中的模型，更新当前模型配置
+        if (modelName == selectedModelId.value) {
+          _updateCurrentModelConfig();
+        }
       }
     }
   }
@@ -486,5 +507,188 @@ class ApiConfigController extends GetxController {
   // 获取当前选中模型的所有变体
   List<String> getCurrentModelVariants() {
     return getModelVariants(selectedModelId.value);
+  }
+
+  // 加载双模型模式配置
+  void _loadDualModeConfig() {
+    final enabled = _box.get(_dualModeEnabledKey, defaultValue: false) as bool;
+    final outlineId = _box.get(_outlineModelIdKey, defaultValue: '') as String;
+    final chapterId = _box.get(_chapterModelIdKey, defaultValue: '') as String;
+    final outlineVariant = _box.get(_outlineModelVariantKey, defaultValue: '') as String;
+    final chapterVariant = _box.get(_chapterModelVariantKey, defaultValue: '') as String;
+    
+    isDualModeEnabled.value = enabled;
+    
+    // 检查保存的模型ID是否存在于当前模型列表中
+    if (outlineId.isNotEmpty && models.any((m) => m.name == outlineId)) {
+      outlineModelId.value = outlineId;
+      
+      // 检查保存的模型变体是否存在
+      final outlineModel = models.firstWhere((m) => m.name == outlineId);
+      if (outlineVariant.isNotEmpty && 
+          (outlineVariant == outlineModel.model || 
+           outlineModel.modelVariants.contains(outlineVariant))) {
+        outlineModelVariant.value = outlineVariant;
+      } else {
+        outlineModelVariant.value = outlineModel.model; // 使用默认模型标识符
+      }
+    } else if (models.isNotEmpty) {
+      outlineModelId.value = models[0].name; // 设置默认值
+      outlineModelVariant.value = models[0].model; // 使用默认模型标识符
+    }
+    
+    if (chapterId.isNotEmpty && models.any((m) => m.name == chapterId)) {
+      chapterModelId.value = chapterId;
+      
+      // 检查保存的模型变体是否存在
+      final chapterModel = models.firstWhere((m) => m.name == chapterId);
+      if (chapterVariant.isNotEmpty && 
+          (chapterVariant == chapterModel.model || 
+           chapterModel.modelVariants.contains(chapterVariant))) {
+        chapterModelVariant.value = chapterVariant;
+      } else {
+        chapterModelVariant.value = chapterModel.model; // 使用默认模型标识符
+      }
+    } else if (models.isNotEmpty) {
+      chapterModelId.value = models[0].name; // 设置默认值
+      chapterModelVariant.value = models[0].model; // 使用默认模型标识符
+    }
+  }
+  
+  // 切换双模型模式
+  void toggleDualMode(bool enabled) {
+    isDualModeEnabled.value = enabled;
+    _box.put(_dualModeEnabledKey, enabled);
+    
+    // 如果启用双模型模式但未设置模型，则设置默认模型
+    if (enabled) {
+      if (outlineModelId.value.isEmpty && models.isNotEmpty) {
+        outlineModelId.value = models[0].name;
+        _box.put(_outlineModelIdKey, outlineModelId.value);
+      }
+      
+      if (chapterModelId.value.isEmpty && models.isNotEmpty) {
+        chapterModelId.value = models[0].name;
+        _box.put(_chapterModelIdKey, chapterModelId.value);
+      }
+    }
+  }
+  
+  // 更新大纲生成模型
+  void updateOutlineModel(String modelId) {
+    outlineModelId.value = modelId;
+    _box.put(_outlineModelIdKey, modelId);
+    
+    // 更新模型变体为新模型的默认标识符
+    final model = models.firstWhere((m) => m.name == modelId);
+    outlineModelVariant.value = model.model;
+    _box.put(_outlineModelVariantKey, model.model);
+  }
+  
+  // 更新章节生成模型
+  void updateChapterModel(String modelId) {
+    chapterModelId.value = modelId;
+    _box.put(_chapterModelIdKey, modelId);
+    
+    // 更新模型变体为新模型的默认标识符
+    final model = models.firstWhere((m) => m.name == modelId);
+    chapterModelVariant.value = model.model;
+    _box.put(_chapterModelVariantKey, model.model);
+  }
+  
+  // 添加更新大纲模型变体的方法
+  void updateOutlineModelVariant(String variant) {
+    if (variant.isEmpty) return;
+    
+    // 检查变体是否存在于选定的模型中
+    final modelId = outlineModelId.value;
+    if (modelId.isNotEmpty) {
+      final modelIndex = models.indexWhere((m) => m.name == modelId);
+      if (modelIndex != -1) {
+        final model = models[modelIndex];
+        // 确保变体有效（是主模型或者是模型的变体）
+        if (variant == model.model || model.modelVariants.contains(variant)) {
+          outlineModelVariant.value = variant;
+          _box.put(_outlineModelVariantKey, variant);
+        }
+      }
+    }
+  }
+  
+  // 添加更新章节模型变体的方法
+  void updateChapterModelVariant(String variant) {
+    if (variant.isEmpty) return;
+    
+    // 检查变体是否存在于选定的模型中
+    final modelId = chapterModelId.value;
+    if (modelId.isNotEmpty) {
+      final modelIndex = models.indexWhere((m) => m.name == modelId);
+      if (modelIndex != -1) {
+        final model = models[modelIndex];
+        // 确保变体有效（是主模型或者是模型的变体）
+        if (variant == model.model || model.modelVariants.contains(variant)) {
+          chapterModelVariant.value = variant;
+          _box.put(_chapterModelVariantKey, variant);
+        }
+      }
+    }
+  }
+  
+  // 修改获取大纲生成模型配置的方法
+  ModelConfig getOutlineModel() {
+    if (isDualModeEnabled.value && outlineModelId.value.isNotEmpty) {
+      final model = models.firstWhere(
+        (m) => m.name == outlineModelId.value,
+        orElse: () => getCurrentModel()
+      );
+      
+      // 使用指定的模型变体
+      if (outlineModelVariant.value.isNotEmpty) {
+        return model.copyWith(model: outlineModelVariant.value);
+      }
+      
+      return model;
+    }
+    return getCurrentModel();
+  }
+  
+  // 修改获取章节生成模型配置的方法
+  ModelConfig getChapterModel() {
+    if (isDualModeEnabled.value && chapterModelId.value.isNotEmpty) {
+      final model = models.firstWhere(
+        (m) => m.name == chapterModelId.value,
+        orElse: () => getCurrentModel()
+      );
+      
+      // 使用指定的模型变体
+      if (chapterModelVariant.value.isNotEmpty) {
+        return model.copyWith(model: chapterModelVariant.value);
+      }
+      
+      return model;
+    }
+    return getCurrentModel();
+  }
+
+  // 修改ModelConfig类的addModelVariant方法，确保不添加重复变体
+  void _ensureUniqueModelVariants(String modelName) {
+    final index = models.indexWhere((m) => m.name == modelName);
+    if (index != -1) {
+      // 去除重复的变体
+      final uniqueVariants = models[index].modelVariants.toSet().toList();
+      // 确保变体列表中不包含主模型标识符
+      uniqueVariants.remove(models[index].model);
+      // 更新模型变体列表
+      models[index] = models[index].copyWith(modelVariants: uniqueVariants);
+      // 保存到存储
+      _box.put(modelName, models[index].toJson());
+    }
+  }
+  
+  // 在加载模型后清理重复的变体
+  void _cleanupModelVariants() {
+    for (var i = 0; i < models.length; i++) {
+      _ensureUniqueModelVariants(models[i].name);
+    }
   }
 } 

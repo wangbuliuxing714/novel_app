@@ -3,10 +3,12 @@ import 'dart:convert';
 class NovelOutline {
   final String novelTitle;
   final List<ChapterOutline> chapters;
+  final String? outline;
 
   NovelOutline({
     required this.novelTitle,
     required this.chapters,
+    this.outline,
   });
 
   factory NovelOutline.fromJson(Map<String, dynamic> json) {
@@ -15,12 +17,14 @@ class NovelOutline {
       chapters: (json['chapters'] as List)
           .map((e) => ChapterOutline.fromJson(e as Map<String, dynamic>))
           .toList(),
+      outline: json['outline'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
     'novel_title': novelTitle,
     'chapters': chapters.map((e) => e.toJson()).toList(),
+    'outline': outline,
   };
 
   static NovelOutline? tryParse(String jsonString) {

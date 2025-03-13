@@ -21,13 +21,14 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
       body: DefaultTabController(
-        length: 2,
+        length: 3,
         child: Column(
           children: [
             TabBar(
               tabs: const [
                 Tab(text: '模型配置'),
                 Tab(text: '模型列表'),
+                Tab(text: '双模型模式'),
               ],
               labelColor: Theme.of(context).primaryColor,
               unselectedLabelColor: Colors.grey,
@@ -433,6 +434,8 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     )),
                   ),
+                  // 第三个标签页 - 双模型模式
+                  _buildDualModeTab(context, controller),
                 ],
               ),
             ),
@@ -1011,6 +1014,331 @@ class SettingsScreen extends StatelessWidget {
               );
             },
             child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 构建双模型模式设置界面
+  Widget _buildDualModeTab(BuildContext context, ApiConfigController controller) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '双模型模式',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '开启此功能后，您可以为大纲生成和章节/集生成分别指定不同的模型或模型变体。这样可以使用高性能模型来生成大纲，再使用稳定的模型来生成具体内容。',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // 开关
+                  Obx(() => SwitchListTile(
+                    title: const Text('启用双模型模式'),
+                    subtitle: const Text('分别为大纲和章节指定不同的模型或模型变体'),
+                    value: controller.isDualModeEnabled.value,
+                    onChanged: (value) {
+                      controller.toggleDualMode(value);
+                    },
+                  )),
+                  
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  
+                  // 模型选择部分
+                  Obx(() => controller.isDualModeEnabled.value 
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 大纲模型选择
+                          const Text(
+                            '大纲生成模型',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '推荐选择创造力更强的大模型，如GPT-4等，以获得更有创意的故事大纲。',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: controller.outlineModelId.value.isEmpty 
+                              ? (controller.models.isNotEmpty ? controller.models[0].name : null)
+                              : controller.outlineModelId.value,
+                            decoration: const InputDecoration(
+                              labelText: '选择大纲生成模型',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: controller.models.map((model) => DropdownMenuItem(
+                              value: model.name,
+                              child: Text(model.name),
+                            )).toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                controller.updateOutlineModel(value);
+                              }
+                            },
+                          ),
+                          
+                          // 添加大纲模型变体选择
+                          const SizedBox(height: 12),
+                          _buildModelVariantSelector(
+                            context: context,
+                            controller: controller,
+                            labelText: '选择大纲生成模型变体',
+                            helpText: '您可以为大纲生成选择特定的模型变体',
+                            modelIdGetter: () => controller.outlineModelId.value,
+                            variantGetter: () => controller.outlineModelVariant.value,
+                            variantSetter: (variant) => controller.updateOutlineModelVariant(variant),
+                          ),
+                          
+                          const SizedBox(height: 24),
+                          
+                          // 章节模型选择
+                          const Text(
+                            '章节/集生成模型',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '推荐选择更稳定的模型，如QwenTurbo等，以确保生成内容符合大纲要求，并避免出现偏离主题的内容。',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: controller.chapterModelId.value.isEmpty 
+                              ? (controller.models.isNotEmpty ? controller.models[0].name : null)
+                              : controller.chapterModelId.value,
+                            decoration: const InputDecoration(
+                              labelText: '选择章节/集生成模型',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: controller.models.map((model) => DropdownMenuItem(
+                              value: model.name,
+                              child: Text(model.name),
+                            )).toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                controller.updateChapterModel(value);
+                              }
+                            },
+                          ),
+                          
+                          // 添加章节模型变体选择
+                          const SizedBox(height: 12),
+                          _buildModelVariantSelector(
+                            context: context,
+                            controller: controller,
+                            labelText: '选择章节生成模型变体',
+                            helpText: '您可以为章节生成选择特定的模型变体',
+                            modelIdGetter: () => controller.chapterModelId.value,
+                            variantGetter: () => controller.chapterModelVariant.value,
+                            variantSetter: (variant) => controller.updateChapterModelVariant(variant),
+                          ),
+                          
+                          const SizedBox(height: 16),
+                          
+                          // 模型测试按钮
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              ElevatedButton.icon(
+                                icon: const Icon(Icons.tune),
+                                label: const Text('测试模型组合'),
+                                onPressed: () {
+                                  _showTestDualModeDialog(context, controller);
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      )
+                    : Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Text(
+                            '请先启用双模型模式',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ),
+                      ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // 说明卡片
+          const SizedBox(height: 16),
+          Card(
+            elevation: 1,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    '使用建议',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text('1. 大纲生成：建议使用创造力更强的模型，如DeepSeek、GPT-4等'),
+                  SizedBox(height: 4),
+                  Text('2. 章节生成：建议使用遵循指令性更强的模型，如Qwen-Turbo等'),
+                  SizedBox(height: 4),
+                  Text('3. 您可以使用同一个模型的不同变体，例如同一个DeepSeek模型下选择不同的变体用于不同的生成任务'),
+                  SizedBox(height: 4),
+                  Text('4. 如有不同模型的API凭证，可以分别配置不同的API密钥'),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // 构建模型变体选择器
+  Widget _buildModelVariantSelector({
+    required BuildContext context,
+    required ApiConfigController controller,
+    required String labelText,
+    required String helpText,
+    required String Function() modelIdGetter,
+    required String Function() variantGetter,
+    required Function(String) variantSetter,
+  }) {
+    final modelId = modelIdGetter();
+    if (modelId.isEmpty || !controller.models.any((m) => m.name == modelId)) {
+      return const SizedBox.shrink();
+    }
+    
+    final model = controller.models.firstWhere((m) => m.name == modelId);
+    
+    // 确保所有变体都是唯一的：先创建一个Set去重，然后转回List
+    final variantSet = <String>{model.model};
+    variantSet.addAll(model.modelVariants);
+    final allVariants = variantSet.toList();
+    
+    // 如果只有一个变体，不显示选择器
+    if (allVariants.length <= 1) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Text(
+          '当前模型没有可用的变体',
+          style: TextStyle(color: Colors.grey[600], fontStyle: FontStyle.italic),
+        ),
+      );
+    }
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          helpText,
+          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        Obx(() {
+          final currentVariant = variantGetter();
+          String dropdownValue = model.model; // 默认值
+          
+          // 确保下拉框的当前值存在于选项列表中
+          if (currentVariant.isNotEmpty && allVariants.contains(currentVariant)) {
+            dropdownValue = currentVariant;
+          }
+          
+          return DropdownButtonFormField<String>(
+            value: dropdownValue,
+            decoration: InputDecoration(
+              labelText: labelText,
+              border: const OutlineInputBorder(),
+            ),
+            items: allVariants.map((variant) => DropdownMenuItem(
+              value: variant,
+              child: Row(
+                children: [
+                  Text(variant),
+                  if (variant == model.model)
+                    const SizedBox(
+                      width: 8,
+                      child: Padding(
+                        padding: EdgeInsets.only(left: 5.0),
+                        child: Text('(默认)', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      ),
+                    ),
+                ],
+              ),
+            )).toList(),
+            onChanged: (value) {
+              if (value != null) {
+                variantSetter(value);
+              }
+            },
+          );
+        }),
+      ],
+    );
+  }
+  
+  // 显示双模型模式测试对话框
+  void _showTestDualModeDialog(BuildContext context, ApiConfigController controller) {
+    final outlineModelName = controller.models.firstWhere(
+      (m) => m.name == controller.outlineModelId.value,
+      orElse: () => controller.models[0]
+    ).name;
+    
+    final chapterModelName = controller.models.firstWhere(
+      (m) => m.name == controller.chapterModelId.value,
+      orElse: () => controller.models[0]
+    ).name;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('双模型模式测试'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('大纲生成使用: $outlineModelName'),
+            Text('大纲模型变体: ${controller.outlineModelVariant.value}'),
+            const SizedBox(height: 8),
+            Text('章节生成使用: $chapterModelName'),
+            Text('章节模型变体: ${controller.chapterModelVariant.value}'),
+            const SizedBox(height: 16),
+            const Text('模型组合已设置完成，您可以返回创作页面测试双模型生成效果。'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            child: const Text('关闭'),
+            onPressed: () => Navigator.of(context).pop(),
           ),
         ],
       ),

@@ -346,21 +346,21 @@ ${outlineFormatPrompt}
       
       // 构建提示词
       final systemPrompt = '''
-${masterPrompt.isNotEmpty ? masterPrompt + '\n\n' : ''}
+${MasterPrompts.basicPrinciples}
 ${targetReaderPrompt.isNotEmpty ? targetReaderPrompt + '\n\n' : ''}
 ${ChapterGeneration.getSystemPrompt(style)}
 ''';
       
-      final userPrompt = ChapterGeneration.getChapterPrompt(
+      final userPrompt = ChapterGeneration.getEpisodePrompt(
         title: title,
-        chapterNumber: number,
-        totalChapters: totalChapters,
+        episodeNumber: number,
+        totalEpisodes: totalChapters,
         outline: outline,
-        previousChapters: previousChapters,
+        previousEpisodes: previousChapters,
         genre: genre,
         theme: theme,
         style: style,
-        targetReaders: targetReaders,
+        targetViewers: targetReaders,
       );
       
       // 使用流式生成
@@ -384,7 +384,7 @@ ${ChapterGeneration.getSystemPrompt(style)}
         await _checkPause();
         
         // 更新内容
-        final cleanedChunk = ChapterGeneration.formatChapter(chunk);
+        final cleanedChunk = ChapterGeneration.formatScript(chunk);
         buffer.write(cleanedChunk);
         currentParagraph += cleanedChunk;
         
@@ -2394,12 +2394,12 @@ ${chapterPrompt.isNotEmpty ? chapterPrompt + '\n\n' : ''}
       // 生成章节内容
       final systemPrompt = ChapterGeneration.getSystemPrompt(style);
       
-      final userPrompt = ChapterGeneration.getChapterPrompt(
+      final userPrompt = ChapterGeneration.getEpisodePrompt(
         title: title,
-        chapterNumber: chapterNumber,
-        totalChapters: totalChapters,
+        episodeNumber: chapterNumber,
+        totalEpisodes: totalChapters,
         outline: outline,
-        previousChapters: previousChapters.map((content) => Chapter(
+        previousEpisodes: previousChapters.map((content) => Chapter(
           number: 0, // 这里的number不重要，因为我们只需要content
           title: '',
           content: content,
@@ -2407,7 +2407,7 @@ ${chapterPrompt.isNotEmpty ? chapterPrompt + '\n\n' : ''}
         genre: genre,
         theme: theme,
         style: style,
-        targetReaders: targetReaders,
+        targetViewers: targetReaders,
       );
       
       // 使用流式生成
@@ -2424,7 +2424,7 @@ ${chapterPrompt.isNotEmpty ? chapterPrompt + '\n\n' : ''}
         await _checkPause();
         
         // 更新内容
-        final cleanedChunk = ChapterGeneration.formatChapter(chunk);
+        final cleanedChunk = ChapterGeneration.formatScript(chunk);
         buffer.write(cleanedChunk);
         currentParagraph += cleanedChunk;
         
@@ -3044,5 +3044,342 @@ $paragraph
     final union = set1.union(set2).length;
     
     return intersection / union;
+  }
+
+  // 生成短剧脚本大纲
+  Future<String> generateScriptOutline({
+    required String title,
+    required String genre,
+    required String background,
+    required String otherRequirements,
+    required String targetViewers,
+    required int totalEpisodes,
+    required List<String> selectedGenres,
+    required List<CharacterType> selectedCharacterTypes,
+    required Map<String, CharacterCard> selectedCharacterCards,
+    required String style,
+    required Function(String) updateStatus,
+    required Function(double) updateProgress,
+    required Function(String) updateRealtimeOutput,
+  }) async {
+    try {
+      updateStatus('正在生成短剧大纲...');
+      updateProgress(0.1);
+      
+      // 构建主题和要求
+      final theme = _buildThemeForScript(
+        background: background,
+        otherRequirements: otherRequirements,
+        selectedGenres: selectedGenres,
+        selectedCharacterTypes: selectedCharacterTypes,
+        selectedCharacterCards: selectedCharacterCards,
+        style: style,
+      );
+      
+      // 获取大纲提示词
+      final outlinePrompt = OutlineGeneration.generateOutlinePrompt(
+        title,
+        genre,
+        theme,
+        targetViewers,
+        totalEpisodes,
+      );
+      
+      updateStatus('正在思考剧情发展...');
+      updateProgress(0.3);
+      
+      // 使用流式生成大纲，指定目的为大纲生成
+      String outlineContent = '';
+      await for (final chunk in _aiService.generateTextStreamForPurpose(
+        systemPrompt: OutlineGeneration.getSystemPrompt(title, genre, theme),
+        userPrompt: outlinePrompt,
+        purpose: ModelPurpose.outline,  // 指定使用大纲模型
+        temperature: 0.7,
+        maxTokens: 6000,
+      )) {
+        outlineContent += chunk;
+        updateRealtimeOutput(outlineContent);
+      }
+      
+      updateStatus('正在整理大纲格式...');
+      updateProgress(0.8);
+      
+      // 格式化大纲
+      final formattedOutline = OutlineGeneration.formatOutline(outlineContent);
+      
+      updateStatus('大纲生成完成！');
+      updateProgress(1.0);
+      
+      return formattedOutline;
+    } catch (e) {
+      updateStatus('大纲生成失败: $e');
+      rethrow;
+    }
+  }
+  
+  // 生成短剧脚本剧集
+  Future<String> generateScriptEpisode({
+    required String title,
+    required String genre,
+    required String outline,
+    required int episodeNumber,
+    required int totalEpisodes,
+    required List<Chapter> previousEpisodes,
+    required String style,
+    required String targetViewers,
+    required Function(String) updateRealtimeOutput,
+    required Function(String) updateStatus,
+    required Function(double) updateProgress,
+  }) async {
+    try {
+      updateStatus('正在生成第$episodeNumber集...');
+      updateProgress(0.1);
+      
+      // 提取剧集标题
+      final episodeTitle = ChapterGeneration.extractEpisodeTitle(outline, episodeNumber);
+      
+      // 提取剧集大纲
+      final episodeOutline = ChapterGeneration.extractEpisodeOutline(outline, episodeNumber);
+      
+      // 提取主要人物
+      final characters = _extractCharactersFromOutline(outline);
+      
+      // 构建前几集的摘要，提供给AI更好的上下文
+      String previousEpisodesSummary = '';
+      if (previousEpisodes.isNotEmpty && episodeNumber > 1) {
+        previousEpisodesSummary = _buildPreviousEpisodesSummary(previousEpisodes, episodeNumber);
+      }
+      
+      // 获取脚本提示词
+      final scriptPrompt = ChapterGeneration.generateScriptPromptWithContext(
+        title: title,
+        episodeNumber: episodeNumber,
+        outline: episodeOutline,
+        genre: genre,
+        characters: characters,
+        episodeTitle: episodeTitle,
+        previousEpisodesSummary: previousEpisodesSummary,
+      );
+      
+      updateStatus('正在创作第$episodeNumber集剧本...');
+      updateProgress(0.3);
+      
+      // 构建增强的系统提示词，强调前后连贯性
+      final enhancedSystemPrompt = ChapterGeneration.getSystemPromptWithContinuity(style, episodeNumber > 1);
+      
+      // 生成脚本内容，指定目的为章节生成
+      String scriptContent = '';
+      await for (final chunk in _aiService.generateTextStreamForPurpose(
+        systemPrompt: enhancedSystemPrompt,
+        userPrompt: scriptPrompt,
+        purpose: ModelPurpose.chapter,  // 指定使用章节模型
+        temperature: 0.7,
+        maxTokens: 5000,
+      )) {
+        scriptContent += chunk;
+        updateRealtimeOutput(scriptContent);
+      }
+      
+      updateStatus('正在整理剧本格式...');
+      updateProgress(0.8);
+      
+      // 格式化脚本
+      final formattedScript = ChapterGeneration.formatScript(scriptContent);
+      
+      updateStatus('第$episodeNumber集剧本生成完成！');
+      updateProgress(1.0);
+      
+      return formattedScript;
+    } catch (e) {
+      updateStatus('剧本生成失败: $e');
+      rethrow;
+    }
+  }
+  
+  // 构建前几集的摘要，提供给AI更好的上下文
+  String _buildPreviousEpisodesSummary(List<Chapter> previousEpisodes, int currentEpisode) {
+    final StringBuffer summaryBuffer = StringBuffer();
+    summaryBuffer.writeln('### 前集内容回顾：');
+    
+    // 最多回顾前3集内容，以避免提示词过长
+    int startIndex = currentEpisode > 3 ? currentEpisode - 3 : 1;
+    
+    for (int i = startIndex; i < currentEpisode; i++) {
+      // 在previousEpisodes中查找对应集数的章节
+      // 注意：previousEpisodes的index 0可能是大纲，所以实际集数需要通过number属性查找
+      Chapter? episode;
+      try {
+        episode = previousEpisodes.firstWhere((ep) => ep.number == i);
+      } catch (e) {
+        continue; // 如果找不到对应集数，跳过
+      }
+      
+      if (episode != null) {
+        String title = episode.title.isNotEmpty ? episode.title : '第$i集';
+        String content = episode.content;
+        
+        // 提取内容的关键点，限制长度
+        String episodeSummary = _extractEpisodeSummary(content, 250);
+        
+        summaryBuffer.writeln('第$i集 "$title"：');
+        summaryBuffer.writeln(episodeSummary);
+        summaryBuffer.writeln();
+      }
+    }
+    
+    return summaryBuffer.toString();
+  }
+  
+  // 从剧集内容中提取简短摘要
+  String _extractEpisodeSummary(String content, int maxLength) {
+    // 如果内容已经很短，直接返回
+    if (content.length <= maxLength) {
+      return content;
+    }
+    
+    // 尝试提取关键场景和对话
+    final scenes = content.split(RegExp(r'\n\s*\d+-\d+'));
+    if (scenes.length > 1) {
+      // 提取第一个场景和最后一个场景，以及中间的一个关键场景
+      StringBuffer summaryBuffer = StringBuffer();
+      
+      // 添加第一个场景（开头）
+      if (scenes.length > 1) {
+        String firstScene = scenes[1].split('\n\n').take(2).join('\n').trim();
+        if (firstScene.length > 100) {
+          firstScene = firstScene.substring(0, 100) + '...';
+        }
+        summaryBuffer.writeln('开场：' + firstScene);
+      }
+      
+      // 如果有3个或以上场景，添加中间的一个场景
+      if (scenes.length > 3) {
+        int middleIndex = (scenes.length / 2).floor();
+        String middleScene = scenes[middleIndex].split('\n\n').take(2).join('\n').trim();
+        if (middleScene.length > 100) {
+          middleScene = middleScene.substring(0, 100) + '...';
+        }
+        summaryBuffer.writeln('中间：' + middleScene);
+      }
+      
+      // 添加最后一个场景（结局）
+      if (scenes.length > 2) {
+        String lastScene = scenes.last.split('\n\n').take(2).join('\n').trim();
+        if (lastScene.length > 100) {
+          lastScene = lastScene.substring(0, 100) + '...';
+        }
+        summaryBuffer.writeln('结尾：' + lastScene);
+      }
+      
+      return summaryBuffer.toString();
+    }
+    
+    // 如果无法按场景分割，则简单截取开头和结尾
+    int halfLength = (maxLength / 2).floor();
+    return content.substring(0, halfLength) + '...\n...' + 
+           content.substring(content.length - halfLength);
+  }
+  
+  // 从大纲中提取人物
+  List<String> _extractCharactersFromOutline(String outline) {
+    final characters = <String>[];
+    
+    // 尝试从【主要人物设定】部分提取
+    final characterSectionRegex = RegExp(r'【主要人物设定】(.*?)【', dotAll: true);
+    final match = characterSectionRegex.firstMatch(outline);
+    
+    if (match != null && match.groupCount >= 1) {
+      final characterSection = match.group(1) ?? '';
+      
+      // 提取人物名称，通常是冒号前的部分
+      final nameRegex = RegExp(r'([^：\n]+)[:：]');
+      final matches = nameRegex.allMatches(characterSection);
+      
+      for (final nameMatch in matches) {
+        if (nameMatch.groupCount >= 1) {
+          final name = nameMatch.group(1)?.trim();
+          if (name != null && name.isNotEmpty && !characters.contains(name)) {
+            characters.add(name);
+          }
+        }
+      }
+    }
+    
+    // 如果没有找到人物，尝试从整个大纲中提取
+    if (characters.isEmpty) {
+      final nameRegex = RegExp(r'([^，。：\n]{1,4})[:：]');
+      final matches = nameRegex.allMatches(outline);
+      
+      for (final nameMatch in matches) {
+        if (nameMatch.groupCount >= 1) {
+          final name = nameMatch.group(1)?.trim();
+          if (name != null && name.isNotEmpty && !characters.contains(name) && name.length <= 4) {
+            characters.add(name);
+          }
+        }
+      }
+    }
+    
+    return characters;
+  }
+  
+  // 构建短剧脚本的主题和要求
+  String _buildThemeForScript({
+    required String background,
+    required String otherRequirements,
+    required List<String> selectedGenres,
+    required List<CharacterType> selectedCharacterTypes,
+    required Map<String, CharacterCard> selectedCharacterCards,
+    required String style,
+  }) {
+    final buffer = StringBuffer();
+    
+    // 添加类型
+    if (selectedGenres.isNotEmpty) {
+      buffer.writeln('【类型】${selectedGenres.join('、')}');
+      buffer.writeln();
+    }
+    
+    // 添加背景
+    if (background.isNotEmpty) {
+      buffer.writeln('【背景设定】');
+      buffer.writeln(background);
+      buffer.writeln();
+    }
+    
+    // 添加人物设定
+    if (selectedCharacterTypes.isNotEmpty || selectedCharacterCards.isNotEmpty) {
+      buffer.writeln('【人物设定】');
+      
+      // 添加角色类型
+      for (final type in selectedCharacterTypes) {
+        buffer.writeln('- ${type.name}：${type.description}');
+      }
+      
+      // 添加角色卡片
+      for (final card in selectedCharacterCards.values) {
+        buffer.writeln('- ${card.name}：');
+        if (card.gender != null) buffer.writeln('  性别：${card.gender}');
+        if (card.age != null) buffer.writeln('  年龄：${card.age}');
+        if (card.personalityTraits != null) buffer.writeln('  性格：${card.personalityTraits}');
+        if (card.background != null) buffer.writeln('  背景：${card.background}');
+      }
+      
+      buffer.writeln();
+    }
+    
+    // 添加风格
+    if (style.isNotEmpty) {
+      buffer.writeln('【风格】$style');
+      buffer.writeln();
+    }
+    
+    // 添加其他要求
+    if (otherRequirements.isNotEmpty) {
+      buffer.writeln('【其他要求】');
+      buffer.writeln(otherRequirements);
+    }
+    
+    return buffer.toString();
   }
 } 

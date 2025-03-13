@@ -3,12 +3,16 @@ import 'package:get/get.dart';
 
 class OutlinePreviewScreen extends StatefulWidget {
   final String outline;
-  final Function(String) onOutlineConfirmed;
+  final String title;
+  final Function()? onContinue;
+  final Function(String)? onOutlineConfirmed;
 
   const OutlinePreviewScreen({
     Key? key,
     required this.outline,
-    required this.onOutlineConfirmed,
+    this.title = '',
+    this.onContinue,
+    this.onOutlineConfirmed,
   }) : super(key: key);
 
   @override
@@ -35,14 +39,16 @@ class _OutlinePreviewScreenState extends State<OutlinePreviewScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('大纲预览'),
+        title: Text(widget.title.isNotEmpty ? '《${widget.title}》大纲预览' : '大纲预览'),
         actions: [
           IconButton(
             icon: Icon(_isEditing ? Icons.check : Icons.edit),
             onPressed: () {
               if (_isEditing) {
                 // 保存修改
-                widget.onOutlineConfirmed(_controller.text);
+                if (widget.onOutlineConfirmed != null) {
+                  widget.onOutlineConfirmed!(_controller.text);
+                }
                 setState(() => _isEditing = false);
               } else {
                 // 进入编辑模式
@@ -88,7 +94,10 @@ class _OutlinePreviewScreenState extends State<OutlinePreviewScreen> {
                   ),
                   ElevatedButton(
                     onPressed: () {
-                      widget.onOutlineConfirmed(_controller.text);
+                      if (widget.onContinue != null) {
+                        widget.onContinue!();
+                      }
+                      // 关闭当前页面
                       Get.back();
                     },
                     child: const Text('确认并继续'),

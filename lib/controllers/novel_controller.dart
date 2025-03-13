@@ -17,6 +17,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:novel_app/controllers/prompt_package_controller.dart';
+import 'package:novel_app/screens/outline_preview_screen.dart';
+import 'package:novel_app/screens/novel_detail_screen.dart';
+import 'dart:async';
 
 class NovelController extends GetxController {
   final _novelGenerator = Get.find<NovelGeneratorService>();
@@ -53,6 +56,7 @@ class NovelController extends GetxController {
   final _shouldStop = false.obs;
   final _currentChapter = 0.obs;  // 添加当前章节记录
   final _hasOutline = false.obs;  // 添加大纲状态记录
+  Completer<void>? _pauseCompleter; // 添加暂停控制器
 
   static const String _novelsBoxName = 'novels';
   static const String _chaptersBoxName = 'generated_chapters';
@@ -846,19 +850,41 @@ class NovelController extends GetxController {
   // 加载所有保存的小说
   Future<void> loadNovels() async {
     try {
-      final keys = _novelsBox.keys.where((key) => key.toString().startsWith('novel_'));
-      final loadedNovels = <Novel>[];
+      // 加载所有以novel_开头的键
+      final novelKeys = _novelsBox.keys.where((key) => key.toString().startsWith('novel_'));
+      // 也加载所有数字索引的小说
+      final indexKeys = _novelsBox.keys.where((key) => key is int || (key is String && int.tryParse(key.toString()) != null));
       
-      for (final key in keys) {
+      final allKeys = [...novelKeys, ...indexKeys];
+      final loadedNovels = <Novel>[];
+      final processedIds = <String>{}; // 用来跟踪已处理的小说ID，避免重复
+      
+      for (final key in allKeys) {
         final novelData = _novelsBox.get(key);
         if (novelData != null) {
           try {
+            Novel novel;
             if (novelData is Novel) {
-              loadedNovels.add(novelData);
+              novel = novelData;
             } else if (novelData is Map) {
-              final novel = Novel.fromJson(Map<String, dynamic>.from(novelData));
-              loadedNovels.add(novel);
+              novel = Novel.fromJson(Map<String, dynamic>.from(novelData));
+            } else {
+              print('不支持的小说数据类型: ${novelData.runtimeType}');
+              continue;
             }
+            
+            // 检查这个小说是否已经加载过（通过ID或标题）
+            if (processedIds.contains(novel.id) || 
+                loadedNovels.any((n) => n.title == novel.title && n.title.isNotEmpty)) {
+              continue; // 跳过已加载的小说
+            }
+            
+            // 加载小说的章节
+            _loadNovelChapters(novel);
+            
+            loadedNovels.add(novel);
+            processedIds.add(novel.id);
+            print('加载小说: ${novel.title} (ID: ${novel.id}), 章节数: ${novel.chapters.length}');
           } catch (e) {
             print('解析小说数据失败: $e');
           }
@@ -868,9 +894,85 @@ class NovelController extends GetxController {
       // 按创建时间排序，最新的在前面
       loadedNovels.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       novels.value = loadedNovels;
-      print('加载到 ${loadedNovels.length} 本小说');
+      print('总共加载到 ${loadedNovels.length} 本小说');
     } catch (e) {
       print('加载小说失败: $e');
+    }
+  }
+  
+  // 加载小说的所有章节
+  void _loadNovelChapters(Novel novel) {
+    try {
+      // 查找所有属于这个小说的章节
+      final chapterKeys = _chaptersBox.keys.where(
+        (key) => key.toString().startsWith('${novel.id}_')
+      );
+      
+      for (final key in chapterKeys) {
+        final chapterData = _chaptersBox.get(key);
+        if (chapterData != null) {
+          Chapter chapter;
+          if (chapterData is Chapter) {
+            chapter = chapterData;
+          } else if (chapterData is Map) {
+            chapter = Chapter.fromJson(Map<String, dynamic>.from(chapterData));
+          } else {
+            print('不支持的章节数据类型: ${chapterData.runtimeType}');
+            continue;
+          }
+          
+          // 检查这个章节是否已经在小说中
+          final existingIndex = novel.chapters.indexWhere((c) => c.number == chapter.number);
+          if (existingIndex != -1) {
+            // 更新现有章节
+            novel.chapters[existingIndex] = chapter;
+          } else {
+            // 添加新章节
+            novel.chapters.add(chapter);
+          }
+        }
+      }
+      
+      // 确保章节按编号排序
+      novel.chapters.sort((a, b) => a.number.compareTo(b.number));
+      
+      // 更新小说内容（重建内容，确保与章节一致）
+      _updateNovelContent(novel);
+      
+      print('为小说 ${novel.title} 加载了 ${novel.chapters.length} 个章节');
+    } catch (e) {
+      print('加载小说章节失败: $e');
+    }
+  }
+  
+  // 更新小说内容，确保与章节一致
+  void _updateNovelContent(Novel novel) {
+    try {
+      final buffer = StringBuffer();
+      
+      // 先添加大纲（如果存在）
+      Chapter? outlineChapter;
+      try {
+        outlineChapter = novel.chapters.firstWhere((c) => c.number == 0);
+      } catch (e) {
+        // 找不到大纲章节，忽略错误
+      }
+      
+      if (outlineChapter != null) {
+        novel.outline = outlineChapter.content;
+      }
+      
+      // 添加所有正文章节
+      for (final chapter in novel.chapters.where((c) => c.number > 0)) {
+        buffer.writeln('第${chapter.number}集：${chapter.title}');
+        buffer.writeln();
+        buffer.writeln(chapter.content);
+        buffer.writeln();
+      }
+      
+      novel.content = buffer.toString();
+    } catch (e) {
+      print('更新小说内容失败: $e');
     }
   }
 
@@ -1009,5 +1111,204 @@ class NovelController extends GetxController {
     isGenerating.value = false;
     isPaused.value = false;
     generationStatus.value = '';
+  }
+
+  // 生成短剧脚本大纲
+  Future<void> generateScriptOutline() async {
+    if (title.value.isEmpty) {
+      Get.snackbar('错误', '请输入短剧标题');
+      return;
+    }
+
+    if (selectedGenres.isEmpty) {
+      Get.snackbar('错误', '请选择至少一个类型');
+      return;
+    }
+
+    isGenerating.value = true;
+    generationStatus.value = '准备生成短剧大纲...';
+    generationProgress.value = 0.0;
+    realtimeOutput.value = '';
+    isPaused.value = false;
+    _shouldStop.value = false;
+
+    try {
+      final outline = await _novelGenerator.generateScriptOutline(
+        title: title.value,
+        genre: selectedGenres.join('、'),
+        background: background.value,
+        otherRequirements: otherRequirements.value,
+        targetViewers: targetReader.value,
+        totalEpisodes: _totalChapters.value,
+        selectedGenres: selectedGenres,
+        selectedCharacterTypes: selectedCharacterTypes,
+        selectedCharacterCards: selectedCharacterCards,
+        style: style.value,
+        updateStatus: (status) => generationStatus.value = status,
+        updateProgress: (progress) => generationProgress.value = progress,
+        updateRealtimeOutput: (output) => realtimeOutput.value = output,
+      );
+
+      // 创建新的短剧对象
+      final novel = Novel(
+        title: title.value,
+        genre: selectedGenres.join('、'),
+        outline: outline,
+        content: '',
+        chapters: [],
+        createdAt: DateTime.now(),
+      );
+
+      // 保存短剧
+      _novelsBox.add(novel);
+      novels.add(novel);
+
+      // 设置当前大纲
+      currentOutline.value = NovelOutline(
+        novelTitle: title.value,
+        chapters: [], // 添加空的chapters列表
+        outline: outline,
+      );
+      isUsingOutline.value = true;
+      _hasOutline.value = true;
+
+      generationStatus.value = '短剧大纲生成完成！';
+      Get.snackbar('成功', '短剧大纲生成完成');
+      
+      // 显示大纲预览
+      Get.to(() => OutlinePreviewScreen(
+        outline: outline,
+        title: title.value,
+        onContinue: () => generateScriptEpisodes(novel),
+      ));
+    } catch (e) {
+      generationStatus.value = '生成失败: $e';
+      Get.snackbar('错误', '短剧大纲生成失败: $e');
+    } finally {
+      isGenerating.value = false;
+      generationProgress.value = 0.0;
+    }
+  }
+
+  // 生成短剧脚本剧集
+  Future<void> generateScriptEpisodes(Novel novel) async {
+    if (novel.outline.isEmpty) {
+      Get.snackbar('错误', '请先生成短剧大纲');
+      return;
+    }
+
+    isGenerating.value = true;
+    generationStatus.value = '准备生成短剧剧集...';
+    generationProgress.value = 0.0;
+    realtimeOutput.value = '';
+    isPaused.value = false;
+    _shouldStop.value = false;
+    _currentChapter.value = 1;
+
+    try {
+      final totalEpisodes = _totalChapters.value;
+      final chapters = <Chapter>[];
+
+      // 添加大纲作为第0集
+      chapters.add(Chapter(
+        number: 0,
+        title: '大纲',
+        content: novel.outline,
+      ));
+
+      // 生成每一集
+      for (int i = 1; i <= totalEpisodes; i++) {
+        _currentChapter.value = i;
+        
+        if (_shouldStop.value) {
+          generationStatus.value = '生成已停止';
+          break;
+        }
+
+        if (isPaused.value) {
+          generationStatus.value = '生成已暂停，等待继续...';
+          _pauseCompleter = Completer<void>();
+          await _pauseCompleter!.future;
+          generationStatus.value = '继续生成第$i集...';
+        }
+
+        final episodeContent = await _novelGenerator.generateScriptEpisode(
+          title: novel.title,
+          genre: novel.genre,
+          outline: novel.outline,
+          episodeNumber: i,
+          totalEpisodes: totalEpisodes,
+          previousEpisodes: chapters,
+          style: style.value,
+          targetViewers: targetReader.value,
+          updateRealtimeOutput: (output) => realtimeOutput.value = output,
+          updateStatus: (status) => generationStatus.value = status,
+          updateProgress: (progress) => generationProgress.value = progress,
+        );
+
+        // 创建新的剧集
+        final episode = Chapter(
+          number: i,
+          title: '第$i集',
+          content: episodeContent,
+        );
+
+        // 添加到剧集列表
+        chapters.add(episode);
+        _generatedChapters.add(episode);
+
+        // 保存到Hive - 使用小说ID和剧集编号作为复合键
+        final chapterKey = '${novel.id}_$i';
+        await _chaptersBox.put(chapterKey, episode);
+        
+        // 确保立即刷新数据到磁盘
+        await _chaptersBox.flush();
+        
+        print('保存剧集：${novel.title} - 第$i集，键名：$chapterKey');
+      }
+
+      // 更新小说内容和章节
+      novel.chapters.clear(); // 先清空，避免重复添加
+      novel.chapters.addAll(chapters);
+      
+      // 更新小说内容（合并所有剧集）
+      final buffer = StringBuffer();
+      for (final chapter in chapters) {
+        if (chapter.number > 0) { // 跳过大纲
+          buffer.writeln('第${chapter.number}集：${chapter.title}');
+          buffer.writeln();
+          buffer.writeln(chapter.content);
+          buffer.writeln();
+        }
+      }
+      novel.content = buffer.toString();
+
+      // 保存更新后的小说到Hive
+      final novelKey = novels.indexOf(novel);
+      await _novelsBox.put(novelKey, novel);
+      
+      // 确保立即刷新数据到磁盘
+      await _novelsBox.flush();
+      
+      // 也用标题作为键保存一次，增加数据冗余，确保能找到
+      final titleKey = 'novel_${novel.title}';
+      await _novelsBox.put(titleKey, novel);
+      await _novelsBox.flush();
+      
+      print('保存小说：${novel.title}，包含 ${novel.chapters.length} 个章节');
+
+      generationStatus.value = '短剧脚本生成完成！';
+      Get.snackbar('成功', '短剧脚本生成完成并保存');
+      
+      // 导航到小说详情页
+      Get.to(() => NovelDetailScreen(novel: novel));
+    } catch (e) {
+      generationStatus.value = '生成失败: $e';
+      Get.snackbar('错误', '短剧脚本生成失败: $e');
+      print('生成短剧失败: $e');
+    } finally {
+      isGenerating.value = false;
+      generationProgress.value = 0.0;
+    }
   }
 }

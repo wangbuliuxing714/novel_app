@@ -12,6 +12,12 @@ enum AIModel {
   geminiFlash,
 }
 
+enum ModelPurpose {
+  outline,   // 用于生成大纲
+  chapter,   // 用于生成章节
+  general,   // 一般用途
+}
+
 class AIService extends GetxService {
   final ApiConfigController _apiConfig;
   final _client = http.Client();
@@ -44,6 +50,51 @@ class AIService extends GetxService {
     return completer.future;
   }
 
+  // 根据目的生成文本流
+  Stream<String> generateTextStreamForPurpose({
+    required String systemPrompt,
+    required String userPrompt,
+    required ModelPurpose purpose,
+    double? temperature,
+    double? topP,
+    int? maxTokens,
+    double? repetitionPenalty,
+  }) async* {
+    // 根据目的获取相应的模型配置
+    final ModelConfig modelConfig;
+    
+    switch (purpose) {
+      case ModelPurpose.outline:
+        modelConfig = _apiConfig.getOutlineModel();
+        break;
+      case ModelPurpose.chapter:
+        modelConfig = _apiConfig.getChapterModel();
+        break;
+      case ModelPurpose.general:
+      default:
+        modelConfig = _apiConfig.getCurrentModel();
+        break;
+    }
+    
+    // 使用特定的参数，如果未提供则使用模型的默认配置
+    final double useTemperature = temperature ?? modelConfig.temperature;
+    final double useTopP = topP ?? modelConfig.topP;
+    final int useMaxTokens = maxTokens ?? modelConfig.maxTokens;
+    final double useRepetitionPenalty = repetitionPenalty ?? modelConfig.repetitionPenalty;
+    
+    // 生成文本
+    yield* _generateTextStreamWithConfig(
+      systemPrompt: systemPrompt,
+      userPrompt: userPrompt,
+      modelConfig: modelConfig,
+      temperature: useTemperature,
+      topP: useTopP,
+      maxTokens: useMaxTokens,
+      repetitionPenalty: useRepetitionPenalty,
+    );
+  }
+
+  // 原始的生成文本流方法，现在调用内部实现
   Stream<String> generateTextStream({
     required String systemPrompt,
     required String userPrompt,
@@ -53,6 +104,28 @@ class AIService extends GetxService {
     double repetitionPenalty = 1.3,
   }) async* {
     final modelConfig = _apiConfig.getCurrentModel();
+    
+    yield* _generateTextStreamWithConfig(
+      systemPrompt: systemPrompt,
+      userPrompt: userPrompt,
+      modelConfig: modelConfig,
+      temperature: temperature,
+      topP: topP,
+      maxTokens: maxTokens,
+      repetitionPenalty: repetitionPenalty,
+    );
+  }
+  
+  // 内部实现，使用特定的模型配置生成文本
+  Stream<String> _generateTextStreamWithConfig({
+    required String systemPrompt,
+    required String userPrompt,
+    required ModelConfig modelConfig,
+    required double temperature,
+    required double topP,
+    required int? maxTokens,
+    required double repetitionPenalty,
+  }) async* {
     final apiKey = modelConfig.apiKey;
     final apiUrl = modelConfig.apiUrl;
     final apiPath = modelConfig.apiPath;
