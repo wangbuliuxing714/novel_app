@@ -19,6 +19,7 @@ import 'package:novel_app/services/character_card_service.dart';
 import 'package:novel_app/screens/character_card_list_screen.dart';
 import 'package:novel_app/screens/knowledge_base_screen.dart';
 import 'package:novel_app/controllers/knowledge_base_controller.dart';
+import 'package:novel_app/screens/import_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -45,6 +46,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('岱宗文脉'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.file_upload),
+            tooltip: '导入小说',
+            onPressed: () => Get.to(() => const ImportScreen()),
+          ),
           IconButton(
             icon: const Icon(Icons.build),
             tooltip: '工具广场',

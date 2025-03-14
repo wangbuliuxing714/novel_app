@@ -5,6 +5,7 @@ import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/screens/novel_detail_screen.dart';
 import 'package:novel_app/services/export_service.dart';
 import 'package:novel_app/screens/novel_continue/novel_continue_screen.dart';
+import 'package:novel_app/screens/import_screen.dart';
 
 class LibraryScreen extends GetView<NovelController> {
   final _exportService = ExportService();
@@ -16,6 +17,13 @@ class LibraryScreen extends GetView<NovelController> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('我的书库'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.file_upload),
+            tooltip: '导入小说',
+            onPressed: () => Get.to(() => const ImportScreen()),
+          ),
+        ],
       ),
       body: Obx(() {
         if (controller.novels.isEmpty) {

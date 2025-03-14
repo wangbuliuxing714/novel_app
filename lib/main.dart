@@ -37,6 +37,7 @@ import 'package:novel_app/controllers/prompt_package_controller.dart';
 import 'package:novel_app/services/character_generator_service.dart';
 import 'package:novel_app/services/background_generator_service.dart';
 import 'package:novel_app/controllers/knowledge_base_controller.dart';
+import 'package:novel_app/screens/import_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -159,6 +160,7 @@ class MyApp extends StatelessWidget {
         GetPage(name: '/character_type', page: () => CharacterTypeScreen()),
         GetPage(name: '/tools', page: () => ToolsScreen()),
         GetPage(name: '/tts', page: () => TTSScreen()),
+        GetPage(name: '/import', page: () => ImportScreen()),
         GetPage(
           name: '/novel_continue',
           page: () => NovelContinueScreen(novel: Get.arguments),

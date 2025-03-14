@@ -1,31 +1,35 @@
-#define MyAppName "AI小说生成器"
-#define MyAppVersion "1.0.0"
-#define MyAppPublisher "AI Novel Generator"
+#define MyAppName "DaizhongNovel"
+#define MyAppVersion "3.4.5"
+#define MyAppPublisher "Daizhong"
 #define MyAppExeName "novel_app.exe"
-#define MyAppSourceDir "D:\project\cuosor\novel_app\build\windows\x64\runner\Release"
 
 [Setup]
-AppId={{NOVEL-APP-GUID}}
+AppId={{D8A1B2C3-D4E5-F6G7-H8I9-J0K1L2M3N4O5}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
-OutputDir={#MyAppSourceDir}\..\installer
-OutputBaseFilename=AI小说生成器安装程序
+OutputDir=D:\project\cuosor\novel_app\novel_app-1\installer
+OutputBaseFilename=DaizhongNovel_Setup_{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
 [Tasks]
-Name: "desktopicon"; Description: "Create a &desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#MyAppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "D:\project\cuosor\novel_app\novel_app-1\build\windows\x64\runner\Release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "D:\project\cuosor\novel_app\novel_app-1\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch AI Novel Generator"; Flags: nowait postinstall skipifsilent 
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent 
