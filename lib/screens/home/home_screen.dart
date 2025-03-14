@@ -20,6 +20,10 @@ import 'package:novel_app/screens/character_card_list_screen.dart';
 import 'package:novel_app/screens/knowledge_base_screen.dart';
 import 'package:novel_app/controllers/knowledge_base_controller.dart';
 import 'package:novel_app/screens/import_screen.dart';
+import 'package:novel_app/widgets/common/animated_button.dart';
+import 'package:novel_app/widgets/common/animated_card.dart';
+import 'package:novel_app/widgets/common/animated_list_tile.dart';
+import 'package:novel_app/screens/donate_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -117,6 +121,14 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Get.back();
                 Get.to(() => KnowledgeBaseScreen());
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.coffee),
+              title: const Text('给我买杯咖啡'),
+              onTap: () {
+                Get.back();
+                Get.to(() => const DonateScreen());
               },
             ),
             const Divider(),
@@ -337,31 +349,44 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (context) => Obx(() {
                     if (controller.isGenerating.value) {
                       if (controller.isPaused.value) {
-                        return ElevatedButton.icon(
+                        return AnimatedButton(
                           onPressed: controller.checkAndContinueGeneration,
-                          icon: const Icon(Icons.play_arrow),
-                          label: const Text('继续生成'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.play_arrow),
+                              const SizedBox(width: 8),
+                              const Text('继续生成'),
+                            ],
                           ),
                         );
                       } else {
-                        return ElevatedButton.icon(
+                        return AnimatedButton(
                           onPressed: controller.stopGeneration,
-                          icon: const Icon(Icons.pause),
-                          label: const Text('暂停生成'),
                           style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.stop),
+                              const SizedBox(width: 8),
+                              const Text('停止生成'),
+                            ],
                           ),
                         );
                       }
                     } else {
-                      return ElevatedButton.icon(
+                      return AnimatedButton(
                         onPressed: controller.startGeneration,
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('开始生成'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.play_arrow),
+                            const SizedBox(width: 8),
+                            const Text('开始生成'),
+                          ],
                         ),
                       );
                     }
@@ -867,13 +892,41 @@ class _HomeScreenState extends State<HomeScreen> {
           itemCount: controller.novels.length,
           itemBuilder: (context, index) {
             final novel = controller.novels[index];
-            return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                title: Text(novel.title),
-                subtitle: Text('${novel.genre} · ${novel.createTime}'),
-                trailing: Text('${novel.wordCount}字'),
-                onTap: () => Get.to(() => NovelDetailScreen(novel: novel)),
+            return AnimatedCard(
+              onTap: () => Get.to(() => NovelDetailScreen(novel: novel)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                novel.title,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                novel.genre,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             );
           },

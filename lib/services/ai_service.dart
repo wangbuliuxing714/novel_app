@@ -27,20 +27,68 @@ class AIService extends GetxService {
   Future<String> generateContent(String prompt) async {
     final completer = Completer<String>();
     final buffer = StringBuffer();
+    int attempts = 0;
+    final int maxRetries = 3;
+    final int minLength = 200; // 最小内容长度限制
     
-    try {
-      await for (final chunk in generateTextStream(
-        systemPrompt: "你是一个专业的小说创作助手，请根据用户的要求提供高质量的内容。",
-        userPrompt: prompt,
-        temperature: 0.7,
-        maxTokens: 4000,
-      )) {
-        buffer.write(chunk);
+    // 获取知识库控制器
+    final knowledgeBaseController = Get.find<KnowledgeBaseController>();
+    
+    // 如果启用了知识库，使用知识库内容丰富提示词
+    String basePrompt = prompt;
+    if (knowledgeBaseController.useKnowledgeBase.value && knowledgeBaseController.selectedDocIds.isNotEmpty) {
+      basePrompt = knowledgeBaseController.buildPromptWithKnowledge(prompt);
+    }
+    
+    String enhancedPrompt = basePrompt;
+    
+    while (attempts < maxRetries) {
+      try {
+        attempts++;
+        buffer.clear(); // 清空之前的内容
+        
+        await for (final chunk in generateTextStream(
+          systemPrompt: "你是一个专业的小说创作助手，请根据用户的要求提供高质量的内容。",
+          userPrompt: enhancedPrompt,
+          temperature: 0.7,
+          maxTokens: 4000,
+        )) {
+          buffer.write(chunk);
+        }
+        
+        final content = buffer.toString();
+        
+        // 检查内容长度是否符合要求
+        if (content.length >= minLength) {
+          completer.complete(content);
+          break;
+        } else {
+          print('生成内容过短 (${content.length} < $minLength)，尝试重新生成 (尝试 $attempts/$maxRetries)');
+          
+          // 如果是最后一次尝试，返回已有内容而不是失败
+          if (attempts >= maxRetries) {
+            completer.complete(content);
+            break;
+          }
+          
+          // 增强提示词
+          enhancedPrompt = '''$basePrompt
+请提供更加详细和丰富的内容。上次生成的内容过短，需要更多的细节描述、情节发展、人物对话或场景描绘。请至少生成500字的内容。''';
+          
+          // 短暂延迟，避免API限速
+          await Future.delayed(Duration(milliseconds: 500));
+        }
+      } catch (e) {
+        print('生成内容错误: $e，尝试重新生成 (尝试 $attempts/$maxRetries)');
+        
+        if (attempts >= maxRetries) {
+          completer.completeError('生成内容失败: $e');
+          break;
+        }
+        
+        // 短暂延迟，避免API限速
+        await Future.delayed(Duration(seconds: 1));
       }
-      
-      completer.complete(buffer.toString());
-    } catch (e) {
-      completer.completeError('生成内容失败: $e');
     }
     
     return completer.future;
@@ -679,29 +727,68 @@ class AIService extends GetxService {
   Future<String> generateChapterContent(String prompt) async {
     final completer = Completer<String>();
     final buffer = StringBuffer();
+    int attempts = 0;
+    final int maxRetries = 3;
+    final int minLength = 500; // 章节最小长度限制，章节内容应该更长
     
-    try {
-      // 获取知识库控制器
-      final knowledgeBaseController = Get.find<KnowledgeBaseController>();
-      
-      // 如果启用了知识库，使用知识库内容丰富提示词
-      String finalPrompt = prompt;
-      if (knowledgeBaseController.useKnowledgeBase.value && knowledgeBaseController.selectedDocIds.isNotEmpty) {
-        finalPrompt = knowledgeBaseController.buildPromptWithKnowledge(prompt);
+    // 获取知识库控制器
+    final knowledgeBaseController = Get.find<KnowledgeBaseController>();
+    
+    // 如果启用了知识库，使用知识库内容丰富提示词
+    String basePrompt = prompt;
+    if (knowledgeBaseController.useKnowledgeBase.value && knowledgeBaseController.selectedDocIds.isNotEmpty) {
+      basePrompt = knowledgeBaseController.buildPromptWithKnowledge(prompt);
+    }
+    
+    String enhancedPrompt = basePrompt;
+    
+    while (attempts < maxRetries) {
+      try {
+        attempts++;
+        buffer.clear(); // 清空之前的内容
+        
+        await for (final chunk in generateChapterTextStream(
+          systemPrompt: "你是一个专业的小说章节创作助手，请根据用户的需求提供高质量、有代入感的章节内容。内容要有丰富的情节、生动的描写和自然的对话。",
+          userPrompt: enhancedPrompt,
+          temperature: 0.75,
+          maxTokens: 4000,
+        )) {
+          buffer.write(chunk);
+        }
+        
+        final content = buffer.toString();
+        
+        // 检查内容长度是否符合要求
+        if (content.length >= minLength) {
+          completer.complete(content);
+          break;
+        } else {
+          print('章节内容过短 (${content.length} < $minLength)，尝试重新生成 (尝试 $attempts/$maxRetries)');
+          
+          // 如果是最后一次尝试，返回已有内容而不是失败
+          if (attempts >= maxRetries) {
+            completer.complete(content);
+            break;
+          }
+          
+          // 增强提示词
+          enhancedPrompt = '''$basePrompt
+请提供更详细的章节内容，包含更多细节描写、人物对话和情节发展。上次生成的内容过于简短，需要扩展。请至少生成800字以上的完整章节。''';
+          
+          // 短暂延迟，避免API限速
+          await Future.delayed(Duration(milliseconds: 500));
+        }
+      } catch (e) {
+        print('生成章节内容错误: $e，尝试重新生成 (尝试 $attempts/$maxRetries)');
+        
+        if (attempts >= maxRetries) {
+          completer.completeError('生成章节内容失败: $e');
+          break;
+        }
+        
+        // 短暂延迟，避免API限速
+        await Future.delayed(Duration(seconds: 1));
       }
-      
-      await for (final chunk in generateChapterTextStream(
-        systemPrompt: finalPrompt,
-        userPrompt: "请根据以上要求生成章节内容",
-        temperature: 0.7,
-        maxTokens: 4000,
-      )) {
-        buffer.write(chunk);
-      }
-      
-      completer.complete(buffer.toString());
-    } catch (e) {
-      completer.completeError('生成章节内容失败: $e');
     }
     
     return completer.future;
@@ -814,6 +901,66 @@ class AIService extends GetxService {
       repetitionPenalty: repetitionPenalty ?? chapterModel.repetitionPenalty,
       specificModelConfig: chapterModel,
     );
+  }
+
+  Future<String> generateOutline(String prompt) async {
+    final completer = Completer<String>();
+    final buffer = StringBuffer();
+    int attempts = 0;
+    final int maxRetries = 3;
+    final int minLength = 150; // 大纲最小长度限制
+    String enhancedPrompt = prompt;
+    
+    while (attempts < maxRetries) {
+      try {
+        attempts++;
+        buffer.clear(); // 清空之前的内容
+        
+        await for (final chunk in generateTextStream(
+          systemPrompt: "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。",
+          userPrompt: enhancedPrompt,
+          temperature: 0.7,
+          maxTokens: 2000,
+        )) {
+          buffer.write(chunk);
+        }
+        
+        final outline = buffer.toString();
+        
+        // 检查内容长度是否符合要求
+        if (outline.length >= minLength) {
+          completer.complete(outline);
+          break;
+        } else {
+          print('大纲内容过短 (${outline.length} < $minLength)，尝试重新生成 (尝试 $attempts/$maxRetries)');
+          
+          // 如果是最后一次尝试，返回已有内容而不是失败
+          if (attempts >= maxRetries) {
+            completer.complete(outline);
+            break;
+          }
+          
+          // 增强提示词
+          enhancedPrompt = '''$prompt
+请提供更详细的大纲，包含更多情节点和角色发展。上次生成的大纲过于简短，需要扩展。请至少生成300字以上的完整大纲。''';
+          
+          // 短暂延迟，避免API限速
+          await Future.delayed(Duration(milliseconds: 500));
+        }
+      } catch (e) {
+        print('生成大纲错误: $e，尝试重新生成 (尝试 $attempts/$maxRetries)');
+        
+        if (attempts >= maxRetries) {
+          completer.completeError('生成大纲失败: $e');
+          break;
+        }
+        
+        // 短暂延迟，避免API限速
+        await Future.delayed(Duration(seconds: 1));
+      }
+    }
+    
+    return completer.future;
   }
 
   void dispose() {
