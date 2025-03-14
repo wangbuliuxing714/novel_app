@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 咖啡杯底部 -->
+  <rect x="40" y="70" width="120" height="100" rx="10" fill="#8B4513" />
+  
+  <!-- 咖啡杯边框 -->
+  <rect x="45" y="75" width="110" height="90" rx="8" fill="#D2B48C" />
+  
+  <!-- 咖啡杯拿手 -->
+  <path d="M160 90 C180 90, 190 100, 180 120 C170 140, 160 130, 160 120" fill="#8B4513" />
+  
+  <!-- 二维码框架 -->
+  <rect x="60" y="90" width="80" height="80" fill="white" />
+  
+  <!-- 二维码简化图案 -->
+  <rect x="70" y="100" width="10" height="10" fill="black" />
+  <rect x="90" y="100" width="10" height="10" fill="black" />
+  <rect x="110" y="100" width="10" height="10" fill="black" />
+  
+  <rect x="70" y="120" width="10" height="10" fill="black" />
+  <rect x="90" y="120" width="10" height="10" fill="black" />
+  <rect x="110" y="120" width="10" height="10" fill="black" />
+  
+  <rect x="70" y="140" width="10" height="10" fill="black" />
+  <rect x="90" y="140" width="10" height="10" fill="black" />
+  <rect x="110" y="140" width="10" height="10" fill="black" />
+  
+  <!-- 咖啡蒸汽 -->
+  <path d="M80 60 C85 50, 90 55, 90 60" stroke="#D2B48C" stroke-width="3" fill="none" />
+  <path d="M100 50 C105 40, 110 45, 110 50" stroke="#D2B48C" stroke-width="3" fill="none" />
+  <path d="M120 60 C125 50, 130 55, 130 60" stroke="#D2B48C" stroke-width="3" fill="none" />
+  
+  <!-- 文字 -->
+  <text x="100" y="190" text-anchor="middle" font-family="Arial" font-size="12" fill="#8B4513">请使用微信扫一扫</text>
+</svg> 
