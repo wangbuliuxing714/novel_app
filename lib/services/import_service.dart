@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:novel_app/models/novel.dart';
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:gbk_codec/gbk_codec.dart';
 
 class ImportService {
   // 支持的导入格式
@@ -25,9 +27,9 @@ class ImportService {
   }
   
   // 选择要导入的文件
-  Future<File?> pickFile() async {
+  Future<(Uint8List, String)?> pickFileBytes() async {
     try {
-      if (!await _requestPermissions()) {
+      if (!kIsWeb && !await _requestPermissions()) {
         throw Exception('未获得存储权限');
       }
       
@@ -35,25 +37,53 @@ class ImportService {
         type: FileType.custom,
         allowedExtensions: supportedFormats,
         dialogTitle: '选择要导入的小说文件',
+        withData: true, // 确保获取文件内容
       );
       
       if (result == null || result.files.isEmpty) return null;
       
-      if (result.files.single.path == null) {
-        throw Exception('无法获取文件路径');
+      final file = result.files.single;
+      
+      // 获取文件扩展名
+      String extension = '';
+      if (file.extension != null) {
+        extension = file.extension!.toLowerCase();
+      } else if (file.name.contains('.')) {
+        extension = file.name.split('.').last.toLowerCase();
+      } else {
+        throw Exception('无法确定文件类型');
       }
       
-      return File(result.files.single.path!);
+      // 确保文件内容可用
+      if (file.bytes == null) {
+        throw Exception('无法获取文件内容');
+      }
+      
+      return (file.bytes!, extension);
     } catch (e) {
       print('选择文件失败: $e');
       rethrow;
     }
   }
   
-  // 解析TXT文件内容为小说对象
-  Future<Novel?> _parseTxtFile(File file) async {
+  // 解析TXT数据为小说对象
+  Future<Novel?> _parseTxtBytes(Uint8List bytes) async {
     try {
-      final content = await file.readAsString();
+      // 尝试以UTF-8解码
+      String content;
+      try {
+        content = utf8.decode(bytes);
+      } catch (e) {
+        // 如果UTF-8解码失败，尝试以GB18030解码（中文环境常用）
+        try {
+          content = gbk.decode(bytes);
+        } catch (e) {
+          // 如果还是失败，返回一个默认值
+          content = '无法解析文件内容，可能是编码问题';
+          print('文件解码失败: $e');
+        }
+      }
+      
       final lines = content.split('\n');
       
       String title = '导入的小说';
@@ -134,10 +164,10 @@ class ImportService {
     }
   }
   
-  // 解析JSON文件为小说对象
-  Future<Novel?> _parseJsonFile(File file) async {
+  // 解析JSON数据为小说对象
+  Future<Novel?> _parseJsonBytes(Uint8List bytes) async {
     try {
-      final content = await file.readAsString();
+      final content = utf8.decode(bytes);
       final json = jsonDecode(content) as Map<String, dynamic>;
       
       return Novel.fromJson(json);
@@ -150,16 +180,16 @@ class ImportService {
   // 导入小说
   Future<Novel?> importNovel() async {
     try {
-      final file = await pickFile();
-      if (file == null) return null;
+      final fileData = await pickFileBytes();
+      if (fileData == null) return null;
       
-      final extension = path.extension(file.path).toLowerCase().substring(1);
+      final (bytes, extension) = fileData;
       
       switch (extension) {
         case 'txt':
-          return await _parseTxtFile(file);
+          return await _parseTxtBytes(bytes);
         case 'json':
-          return await _parseJsonFile(file);
+          return await _parseJsonBytes(bytes);
         default:
           throw Exception('不支持的文件格式：$extension');
       }
