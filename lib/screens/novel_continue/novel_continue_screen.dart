@@ -23,6 +23,7 @@ class _NovelContinueScreenState extends State<NovelContinueScreen> {
   final _generatedOutline = ''.obs;
   final _generatedChapters = <Chapter>[].obs;
   final _currentStep = 0.obs; // 0: 未开始, 1: 生成大纲, 2: 生成章节
+  String _generationStatus = '';
 
   @override
   void initState() {
@@ -304,12 +305,19 @@ class _NovelContinueScreenState extends State<NovelContinueScreen> {
       );
       _generatedOutline.value = outlineResult;
 
+      // 将大纲也添加到生成章节列表中，作为第0章
+      _generatedChapters.clear();
+      _generatedChapters.add(Chapter(
+        number: 0,
+        title: '大纲',
+        content: outlineResult,
+      ));
+
       // 解析生成的大纲
       final outlinePattern = RegExp(r'第(\d+)章：(.*?)\n(.*?)(?=第\d+章|$)', dotAll: true);
       final matches = outlinePattern.allMatches(outlineResult);
       
       _currentStep.value = 2;
-      _generatedChapters.clear();
       
       // 根据大纲生成每个章节的内容
       for (final match in matches) {
@@ -319,16 +327,19 @@ class _NovelContinueScreenState extends State<NovelContinueScreen> {
         
         // 生成章节内容
         final chapterContent = await _novelController.generateChapterFromOutline(
-          novel: widget.novel,
           chapterNumber: number,
-          chapterTitle: title,
-          chapterOutline: outline,
+          outlineString: _generatedOutline.value,
+          onStatus: (status) {
+            setState(() {
+              _generationStatus = status;
+            });
+          },
         );
         
         _generatedChapters.add(Chapter(
           number: widget.novel.chapters.length + number,
           title: title,
-          content: chapterContent,
+          content: chapterContent.content,
         ));
       }
     } catch (e) {

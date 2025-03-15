@@ -17,6 +17,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:novel_app/controllers/prompt_package_controller.dart';
+import 'package:novel_app/services/conversation_manager.dart';
 
 class NovelController extends GetxController {
   final _novelGenerator = Get.find<NovelGeneratorService>();
@@ -874,6 +875,7 @@ class NovelController extends GetxController {
     }
   }
 
+  // 续写小说
   Future<String> continueNovel({
     required Novel novel,
     required Chapter chapter,
@@ -881,67 +883,141 @@ class NovelController extends GetxController {
     required int chapterCount,
   }) async {
     try {
-      final systemPrompt = '''你是一位专业的小说大纲续写助手。请根据以下信息续写小说大纲：
+      final systemPrompt = '''你是一位专业的小说创作助手。请根据以下信息生成小说续写大纲：
 
 小说标题：${novel.title}
 小说类型：${novel.genre}
-当前大纲：${novel.outline}
+当前大纲：
+${chapter.content}
 
-续写要求：
-1. 保持故事情节的连贯性和合理性
-2. 延续原有的写作风格和人物性格
-3. 生成${chapterCount}个新章节的大纲
-4. 每个章节包含标题和大纲内容
-5. 遵循用户的续写提示
+续写提示：
+${prompt}
 
-用户续写提示：$prompt
+请生成${chapterCount}个新章节的详细大纲，每个章节包含章节号、标题和具体内容描述。
+按照以下格式输出：
 
-请直接输出续写的大纲内容，格式如下：
-第X章：章节标题
+第N章：章节标题
 章节大纲内容
 
-第X+1章：章节标题
+第N+1章：章节标题
 章节大纲内容
 ...
 ''';
 
-      final response = await _aiService.generateChapterContent(systemPrompt);
+      // 使用大纲模型生成内容
+      final response = await _aiService.generateOutline(systemPrompt, novelTitle: novel.title);
       return response;
     } catch (e) {
       rethrow;
     }
   }
 
-  Future<String> generateChapterFromOutline({
-    required Novel novel,
-    required int chapterNumber,
-    required String chapterTitle,
-    required String chapterOutline,
+  Future<String> generateOutlineFromTitle({
+    required String title,
+    required String genre,
+    required String theme,
+    required String targetReaders,
+    required int totalChapters,
   }) async {
     try {
-      final systemPrompt = '''你是一位专业的小说创作助手。请根据以下信息生成小说章节内容：
+      final systemPrompt = '''你是一位专业的小说策划助手。请基于以下信息生成小说大纲：
 
-小说标题：${novel.title}
-小说类型：${novel.genre}
-小说大纲：${novel.outline}
+小说标题：$title
+小说类型：$genre
+小说主题：$theme
+目标读者：$targetReaders
+计划章节数：$totalChapters
 
-当前章节信息：
-章节号：第${chapterNumber}章
-章节标题：${chapterTitle}
-章节大纲：${chapterOutline}
+请生成大纲，包括以下部分：
+1. 整体架构与世界观
+2. 主要角色与背景
+3. 核心情节发展线
+4. 每章节概要（共$totalChapters章）
 
-要求：
-1. 严格按照大纲内容展开情节
-2. 保持叙事连贯性和合理性
-3. 细节要丰富生动
-4. 符合小说整体风格
-5. 字数在3000-5000字之间
+输出格式：
 
-请直接返回生成的章节内容，不需要包含标题。''';
+一、整体架构与世界观
+[详细描述]
 
-      final response = await _aiService.generateChapterContent(systemPrompt);
+二、主要角色与背景
+[详细描述]
+
+三、核心情节发展线
+[详细描述]
+
+四、章节大纲
+第1章：章节标题
+章节大纲内容
+
+第2章：章节标题
+章节大纲内容
+...
+''';
+
+      final response = await _aiService.generateChapterContent(systemPrompt, novelTitle: title, chapterNumber: 0);
       return response;
     } catch (e) {
+      rethrow;
+    }
+  }
+
+  // 从大纲中生成章节内容
+  Future<Chapter> generateChapterFromOutline({
+    required int chapterNumber,
+    String? outlineString,
+    Function(String)? onStatus,
+  }) async {
+    try {
+      if (currentOutline.value == null) {
+        throw Exception('没有可用的大纲');
+      }
+      
+      final novelTitle = currentOutline.value!.novelTitle;
+      final chapterOutline = currentOutline.value!.chapters.firstWhere(
+        (ch) => ch.chapterNumber == chapterNumber,
+        orElse: () => throw Exception('找不到章节大纲'),
+      );
+      
+      // 获取已生成的章节
+      final previousChapters = _generatedChapters
+        .where((ch) => ch.number < chapterNumber)
+        .toList();
+      
+      // 使用传入的大纲字符串，如果没有则从大纲对象构建
+      final finalOutlineString = outlineString ?? currentOutline.value!.toJson()['chapters']
+        .map((ch) => '第${ch['chapterNumber']}章：${ch['chapterTitle']}\n${ch['contentOutline']}')
+        .join('\n\n');
+      
+      onStatus?.call('正在生成第$chapterNumber章...');
+      
+      // 生成章节内容，传递小说标题
+      final chapter = await _novelGenerator.generateChapter(
+        title: novelTitle,
+        outline: finalOutlineString,
+        number: chapterNumber,
+        totalChapters: currentOutline.value!.chapters.length,
+        previousChapters: previousChapters,
+        onProgress: onStatus,
+        onContent: (content) => _updateRealtimeOutput(content),
+      );
+      
+      // 保存到已生成章节列表
+      final existingIndex = _generatedChapters.indexWhere((ch) => ch.number == chapterNumber);
+      if (existingIndex >= 0) {
+        _generatedChapters[existingIndex] = chapter;
+      } else {
+        _generatedChapters.add(chapter);
+        // 确保章节按顺序排序
+        _generatedChapters.sort((a, b) => a.number.compareTo(b.number));
+      }
+      
+      // 保存到Hive
+      await _saveChapterToHive(novelTitle, chapter);
+      
+      onStatus?.call('第$chapterNumber章生成完成');
+      return chapter;
+    } catch (e) {
+      onStatus?.call('生成失败: $e');
       rethrow;
     }
   }
@@ -1009,5 +1085,39 @@ class NovelController extends GetxController {
     isGenerating.value = false;
     isPaused.value = false;
     generationStatus.value = '';
+  }
+
+  // 添加 _saveChapterToHive 方法
+  Future<void> _saveChapterToHive(String novelTitle, Chapter chapter) async {
+    try {
+      // 获取已经保存的章节列表
+      final chaptersKey = 'chapters_$novelTitle';
+      List<dynamic> savedChapters = _chaptersBox.get(chaptersKey, defaultValue: []) ?? [];
+      
+      // 检查是否存在相同编号的章节
+      final index = savedChapters.indexWhere((ch) {
+        if (ch is Chapter) {
+          return ch.number == chapter.number;
+        } else if (ch is Map) {
+          return ch['number'] == chapter.number;
+        }
+        return false;
+      });
+      
+      // 更新或添加章节
+      if (index != -1) {
+        savedChapters[index] = chapter;
+      } else {
+        savedChapters.add(chapter);
+      }
+      
+      // 保存更新后的章节列表
+      await _chaptersBox.put(chaptersKey, savedChapters);
+      
+      print('保存章节到 Hive 成功: 第${chapter.number}章 - ${chapter.title}');
+    } catch (e) {
+      print('保存章节到 Hive 失败: $e');
+      rethrow;
+    }
   }
 }

@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:novel_app/controllers/api_config_controller.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:novel_app/controllers/knowledge_base_controller.dart';
+import 'package:novel_app/services/conversation_manager.dart';
 
 enum AIModel {
   deepseek,
@@ -22,7 +24,29 @@ class AIService extends GetxService {
   final _retryInterval = const Duration(seconds: 1);  // 重试间隔
   final bool _isWeb = kIsWeb;  // 添加 Web 平台判断
 
+  // 恢复为简单的小说标题到对话ID的映射
+  final Map<String, String> _novelConversationIds = {};
+  
   AIService(this._apiConfig);
+
+  // 获取或创建小说的对话ID - 简化回最初版本
+  String _getNovelConversationId(String novelTitle) {
+    if (!_novelConversationIds.containsKey(novelTitle)) {
+      _novelConversationIds[novelTitle] = ConversationManager.createConversation();
+      print('为小说"$novelTitle"创建对话ID: ${_novelConversationIds[novelTitle]}');
+    }
+    return _novelConversationIds[novelTitle]!;
+  }
+
+  // 简化清除方法
+  void clearNovelConversation(String novelTitle) {
+    final conversationId = _novelConversationIds[novelTitle];
+    if (conversationId != null) {
+      ConversationManager.clearConversation(conversationId);
+      _novelConversationIds.remove(novelTitle);
+      print('已清除小说"$novelTitle"的对话历史');
+    }
+  }
 
   Future<String> generateContent(String prompt) async {
     final completer = Completer<String>();
@@ -102,6 +126,7 @@ class AIService extends GetxService {
     int? maxTokens,
     double repetitionPenalty = 1.3,
     ModelConfig? specificModelConfig,
+    String? conversationId,
   }) async* {
     final modelConfig = specificModelConfig ?? _apiConfig.getCurrentModel();
     final apiKey = modelConfig.apiKey;
@@ -120,6 +145,66 @@ class AIService extends GetxService {
     int retryCount = 0;
     const maxRetries = 3; // 最大重试次数
     
+    // 如果提供了conversationId，则使用对话历史，否则直接使用系统提示词和用户提示词
+    List<Map<String, dynamic>> messages = [];
+    if (conversationId != null) {
+      // 使用已有的对话历史
+      messages = ConversationManager.getMessages(conversationId);
+      
+      // 打印对话历史，帮助调试
+      print('===== 对话历史 (ID: $conversationId) =====');
+      print('对话历史条数: ${messages.length}');
+      for (var i = 0; i < messages.length; i++) {
+        var msg = messages[i];
+        print('消息[$i] - ${msg['role']}: ${(msg['content'] as String).length > 50 ? (msg['content'] as String).substring(0, 50) + "..." : msg['content']}');
+      }
+      
+      // 检查对话历史中是否有大纲内容
+      bool hasOutline = false;
+      for (final msg in messages) {
+        if (msg['role'] == 'assistant' && 
+            (msg['content'] as String).contains('大纲') && 
+            (msg['content'] as String).length > 100) {
+          hasOutline = true;
+          print('对话历史中包含大纲内容');
+          break;
+        }
+      }
+      
+      if (!hasOutline) {
+        print('警告: 对话历史中不包含大纲内容');
+      }
+      
+      // 如果对话历史为空，添加系统提示词
+      if (messages.isEmpty) {
+        messages.add({
+          'role': 'system',
+          'content': systemPrompt
+        });
+      }
+      
+      // 添加用户提示词
+      messages.add({
+        'role': 'user',
+        'content': userPrompt
+      });
+      
+      // 更新对话历史
+      ConversationManager.addMessage(conversationId, 'user', userPrompt);
+    } else {
+      // 使用单次对话模式
+      messages = [
+        {
+          'role': 'system',
+          'content': systemPrompt,
+        },
+        {
+          'role': 'user',
+          'content': userPrompt,
+        }
+      ];
+    }
+    
     while (true) {
       try {
         // 添加调试日志
@@ -128,17 +213,30 @@ class AIService extends GetxService {
         print('API URL: $apiUrl$apiPath');
         print('模型: $model');
         print('重试次数: $retryCount');
+        print('使用对话ID: ${conversationId ?? "无"}');
         
         final Map<String, dynamic> body;
         
         // 根据不同API格式构建请求体
         if (apiFormat == 'Google API') {
+          // Google API 不支持对话历史格式，需要手动合并
+          String combinedPrompt = systemPrompt;
+          if (conversationId != null) {
+            final historyMessages = ConversationManager.getMessages(conversationId);
+            for (var i = 0; i < historyMessages.length - 1; i++) { // 不包括最后一条用户消息
+              if (historyMessages[i]['role'] != 'system') {
+                combinedPrompt += '\n\n${historyMessages[i]['role']}: ${historyMessages[i]['content']}';
+              }
+            }
+            combinedPrompt += '\n\n最新问题：$userPrompt';
+          }
+          
           body = {
             'contents': [
               {
                 'role': 'user',
                 'parts': [
-                  {'text': '$systemPrompt\n\n$userPrompt'}
+                  {'text': combinedPrompt}
                 ]
               }
             ],
@@ -173,17 +271,56 @@ class AIService extends GetxService {
             body['stream'] = true;
           }
         } else {
-          body = {
-            'messages': [
-              {
-                'role': 'system',
-                'content': systemPrompt,
-              },
-              {
-                'role': 'user',
-                'content': userPrompt,
+          // OpenAI格式API
+          // 确保messages数组符合OpenAI格式
+          List<Map<String, dynamic>> formattedMessages = [];
+          
+          // 首先添加系统消息（如果存在）
+          bool hasSystemMessage = false;
+          for (var msg in messages) {
+            if (msg['role'] == 'system') {
+              formattedMessages.add(msg);
+              hasSystemMessage = true;
+              break;
+            }
+          }
+          
+          // 如果没有系统消息，添加默认系统消息
+          if (!hasSystemMessage) {
+            formattedMessages.add({
+              'role': 'system',
+              'content': systemPrompt
+            });
+          }
+          
+          // 添加非系统消息
+          for (var msg in messages) {
+            if (msg['role'] != 'system') {
+              // 确保消息角色符合OpenAI要求
+              if (msg['role'] == 'assistant' || msg['role'] == 'user') {
+                formattedMessages.add(msg);
               }
-            ],
+            }
+          }
+          
+          // 检查最后一条消息是否是用户的
+          if (formattedMessages.isNotEmpty && 
+              formattedMessages.last['role'] != 'user') {
+            // 确保最后一条是用户消息
+            formattedMessages.add({
+              'role': 'user',
+              'content': userPrompt
+            });
+          }
+          
+          print('格式化后的消息数: ${formattedMessages.length}');
+          for (var i = 0; i < formattedMessages.length; i++) {
+            var msg = formattedMessages[i];
+            print('格式化消息[$i] - ${msg['role']}: ${(msg['content'] as String).length > 30 ? (msg['content'] as String).substring(0, 30) + "..." : msg['content']}');
+          }
+          
+          body = {
+            'messages': formattedMessages,
             'model': model,
             'temperature': temperature,
             'top_p': topP,
@@ -242,6 +379,8 @@ class AIService extends GetxService {
           throw Exception('API请求失败，状态码: ${streamedResponse.statusCode}，错误: $errorBody');
         }
 
+        String responseContent = '';
+        
         // 处理流式响应
         await for (final chunk in streamedResponse.stream.transform(utf8.decoder)) {
           if (chunk.trim().isEmpty) continue;
@@ -275,6 +414,7 @@ class AIService extends GetxService {
                     
                     var text = candidate['content']['parts'][0]['text'];
                     if (text != null && text.toString().isNotEmpty) {
+                      responseContent += text.toString();
                       yield text.toString();
                     }
                   }
@@ -297,7 +437,9 @@ class AIService extends GetxService {
                     if (json['choices'] != null &&
                         json['choices'][0]['delta'] != null &&
                         json['choices'][0]['delta']['content'] != null) {
-                      yield json['choices'][0]['delta']['content'];
+                      final content = json['choices'][0]['delta']['content'];
+                      responseContent += content;
+                      yield content;
                     }
                   } catch (e) {
                     print('解析JSON失败: $e');
@@ -311,6 +453,11 @@ class AIService extends GetxService {
             print('处理响应数据块出错: $e');
             // 继续处理下一个数据块
           }
+        }
+        
+        // 如果使用对话ID，将AI的回复添加到对话历史
+        if (conversationId != null && responseContent.isNotEmpty) {
+          ConversationManager.addMessage(conversationId, 'assistant', responseContent);
         }
         
         // 如果成功处理了所有响应，退出循环
@@ -724,7 +871,7 @@ class AIService extends GetxService {
     }
   }
 
-  Future<String> generateChapterContent(String prompt) async {
+  Future<String> generateChapterContent(String prompt, {String? novelTitle, int? chapterNumber, String? outlineContent}) async {
     final completer = Completer<String>();
     final buffer = StringBuffer();
     int attempts = 0;
@@ -734,13 +881,114 @@ class AIService extends GetxService {
     // 获取知识库控制器
     final knowledgeBaseController = Get.find<KnowledgeBaseController>();
     
+    // 获取或创建小说的对话ID
+    String? conversationId;
+    if (novelTitle != null) {
+      conversationId = _getNovelConversationId(novelTitle);
+      print('使用小说"$novelTitle"的对话ID: $conversationId');
+      
+      // 检查对话历史中是否有大纲信息
+      if (conversationId != null) {
+        final messages = ConversationManager.getMessages(conversationId);
+        bool hasOutline = false;
+        
+        for (final message in messages) {
+          if (message['role'] == 'assistant' && 
+              message['content'].toString().contains('大纲') && 
+              message['content'].toString().length > 200) {
+            hasOutline = true;
+            print('对话历史中已存在大纲信息');
+            break;
+          }
+        }
+        
+        if (!hasOutline && outlineContent == null) {
+          print('警告：对话历史中没有发现大纲信息，章节生成可能与大纲不匹配');
+        }
+      }
+    }
+    
     // 如果启用了知识库，使用知识库内容丰富提示词
     String basePrompt = prompt;
     if (knowledgeBaseController.useKnowledgeBase.value && knowledgeBaseController.selectedDocIds.isNotEmpty) {
       basePrompt = knowledgeBaseController.buildPromptWithKnowledge(prompt);
     }
     
+    // 如果提供了大纲内容，将其添加到提示中
+    if (outlineContent != null && outlineContent.isNotEmpty) {
+      basePrompt = '''
+【小说整体大纲】
+$outlineContent
+
+【本章节要求】
+$basePrompt
+
+【重要说明】
+1. 你必须严格按照上述大纲内容生成本章节
+2. 本章节内容必须与大纲保持一致，不得偏离大纲的主要情节
+3. 确保人物、背景和世界观设定与大纲一致
+''';
+
+      // 如果对话历史中没有大纲信息，将大纲添加到对话历史中
+      if (conversationId != null) {
+        final messages = ConversationManager.getMessages(conversationId);
+        bool hasOutline = false;
+        
+        for (final message in messages) {
+          if (message['role'] == 'assistant' && 
+              message['content'].toString().contains('大纲')) {
+            hasOutline = true;
+            break;
+          }
+        }
+        
+        if (!hasOutline) {
+          print('将大纲添加到对话历史中');
+          
+          // 首先清除可能存在的旧消息
+          ConversationManager.clearConversation(conversationId);
+          
+          // 添加系统指令，明确如何使用大纲
+          ConversationManager.addMessage(conversationId, 'system', 
+            "你是一个专业的小说章节创作助手。你必须严格按照小说大纲生成章节内容，确保情节连贯，人物和世界观设定一致。每个章节必须与大纲中描述的内容相符。");
+          
+          // 添加大纲作为助手消息
+          ConversationManager.addMessage(conversationId, 'assistant', 
+            "这部小说的大纲如下:\n\n```\n" + outlineContent + "\n```\n\n我会根据这个大纲来创作每个章节。");
+          
+          // 添加用户确认
+          ConversationManager.addMessage(conversationId, 'user', 
+            "非常好的大纲，请记住这个大纲并根据它创作具体章节。");
+          
+          // 添加助手确认
+          ConversationManager.addMessage(conversationId, 'assistant', 
+            "我已经理解并记住了这个大纲。创作章节时，我会严格遵循大纲中的情节发展，确保角色和世界观的一致性。");
+        }
+      }
+    }
+    
+    // 增强提示词，强调内容的连贯性
+    basePrompt = '''
+$basePrompt
+
+【连贯性要求】
+你必须确保生成的内容与前文高度连贯，特别注意：
+1. 人物形象、性格、能力和关系必须与前文一致
+2. 情节发展必须基于前文已有的铺垫，不得随意创造新线索
+3. 世界观设定（如魔法规则、科技水平、社会结构等）必须与前文保持一致
+4. 提及的地点、物品、概念应该正确引用前文
+5. 人物的语言风格和习惯必须保持一致
+
+请仔细阅读【前序章节详细内容】，确保新生成的内容是前文的自然延续，而不是割裂的新故事。
+''';
+    
     String enhancedPrompt = basePrompt;
+    String systemPrompt = "你是一个专业的小说章节创作助手，请根据用户的需求提供高质量、有代入感的章节内容。内容要有丰富的情节、生动的描写和自然的对话。你必须严格保持与前文的连贯性，记住并正确引用前文中的所有关键情节、人物特征和设定。你的任务是创作出一个既符合当前章节大纲要求、又与前文自然衔接的优质章节。";
+    
+    // 对于首次对话，设置系统提示词
+    if (conversationId != null && ConversationManager.getMessages(conversationId).isEmpty) {
+      ConversationManager.addMessage(conversationId, 'system', systemPrompt);
+    }
     
     while (attempts < maxRetries) {
       try {
@@ -748,10 +996,11 @@ class AIService extends GetxService {
         buffer.clear(); // 清空之前的内容
         
         await for (final chunk in generateChapterTextStream(
-          systemPrompt: "你是一个专业的小说章节创作助手，请根据用户的需求提供高质量、有代入感的章节内容。内容要有丰富的情节、生动的描写和自然的对话。",
+          systemPrompt: systemPrompt,
           userPrompt: enhancedPrompt,
           temperature: 0.75,
           maxTokens: 4000,
+          conversationId: conversationId, // 使用对话ID
         )) {
           buffer.write(chunk);
         }
@@ -760,20 +1009,133 @@ class AIService extends GetxService {
         
         // 检查内容长度是否符合要求
         if (content.length >= minLength) {
-          completer.complete(content);
-          break;
+          // 检查连贯性问题
+          if (attempts == 1 && content.contains("前文") || content.contains("上一章") || 
+              content.contains("前面提到") || content.contains("之前") || 
+              content.contains("如前所述") || content.contains("回顾") || 
+              content.contains("正如我们所见")) {
+            // 内容中含有明确的前文引用，可能连贯性良好
+            
+            // 确保章节内容被明确添加到对话历史中（虽然在流式生成时可能已经添加，但这里再次确认）
+            if (conversationId != null) {
+              String chapterTitle = chapterNumber != null ? "第${chapterNumber}章" : "新章节";
+              print('将生成的章节内容"$chapterTitle"明确添加到对话历史中，对话ID: $conversationId');
+              
+              // 检查内容是否已在对话历史中存在
+              bool contentExists = false;
+              final messages = ConversationManager.getMessages(conversationId);
+              for (final message in messages) {
+                if (message['role'] == 'assistant' && 
+                    message['content'].toString() == content) {
+                  contentExists = true;
+                  print('章节内容已存在于对话历史中，跳过添加');
+                  break;
+                }
+              }
+              
+              // 如果内容不存在，则添加
+              if (!contentExists) {
+                ConversationManager.addMessage(conversationId, 'assistant', content);
+                
+                // 添加系统消息，提示下一章需要参考此章内容
+                ConversationManager.addMessage(conversationId, 'system', 
+                  "请在生成下一章节时，将上述章节内容作为前文参考，确保情节连贯，人物和世界观设定一致。");
+                
+                // 添加空的用户提示，准备接收下一章的指令
+                ConversationManager.addMessage(conversationId, 'user', 
+                  "这章写得很好，请记住这章的内容，为后续章节做准备。");
+                  
+                print('章节内容成功添加到对话历史中，当前对话历史长度: ${ConversationManager.getMessages(conversationId).length}');
+              }
+            }
+            
+            completer.complete(content);
+            break;
+          } else if (attempts < maxRetries) {
+            // 尝试更强的连贯性要求
+            print('尝试增强章节内容的连贯性 (尝试 $attempts/$maxRetries)');
+            
+            enhancedPrompt = '''
+$basePrompt
+
+【连贯性问题】
+上次生成的内容与前文连贯性不足，请特别关注：
+1. 明确引用前文中的具体事件和对话
+2. 提及前文中角色说过的话语或做过的决定
+3. 延续前文中未完成的事件和情节线
+4. 确保角色的情感状态和动机与前文一致
+5. 适当回顾前文中的重要转折点，并以此为基础向前推进情节
+
+请重新创作，确保新内容是前文的自然延续，读者能够感受到整体故事的连贯性。
+''';
+            
+            // 短暂延迟，避免API限速
+            await Future.delayed(Duration(milliseconds: 500));
+            continue;
+          } else {
+            // 最后一次尝试，返回现有内容
+            // 确保章节内容被明确添加到对话历史中
+            if (conversationId != null) {
+              print('最后一次尝试，将生成的章节内容添加到对话历史中，对话ID: $conversationId');
+              
+              // 检查内容是否已在对话历史中存在
+              bool contentExists = false;
+              final messages = ConversationManager.getMessages(conversationId);
+              for (final message in messages) {
+                if (message['role'] == 'assistant' && 
+                    message['content'].toString() == content) {
+                  contentExists = true;
+                  print('章节内容已存在于对话历史中，跳过添加');
+                  break;
+                }
+              }
+              
+              // 如果内容不存在，则添加
+              if (!contentExists) {
+                ConversationManager.addMessage(conversationId, 'assistant', content);
+                ConversationManager.addMessage(conversationId, 'system', 
+                  "请在生成下一章节时，将上述章节内容作为前文参考，确保情节连贯。");
+                print('章节内容成功添加到对话历史中');
+              }
+            }
+            
+            completer.complete(content);
+            break;
+          }
         } else {
           print('章节内容过短 (${content.length} < $minLength)，尝试重新生成 (尝试 $attempts/$maxRetries)');
           
           // 如果是最后一次尝试，返回已有内容而不是失败
           if (attempts >= maxRetries) {
+            // 即使内容过短，也将其添加到对话历史中
+            if (conversationId != null) {
+              print('内容虽短但为最后尝试，将其添加到对话历史，对话ID: $conversationId');
+              
+              // 检查内容是否已在对话历史中存在
+              bool contentExists = false;
+              final messages = ConversationManager.getMessages(conversationId);
+              for (final message in messages) {
+                if (message['role'] == 'assistant' && 
+                    message['content'].toString() == content) {
+                  contentExists = true;
+                  break;
+                }
+              }
+              
+              // 如果内容不存在，则添加
+              if (!contentExists) {
+                ConversationManager.addMessage(conversationId, 'assistant', content);
+                print('短章节内容已添加到对话历史中');
+              }
+            }
+            
             completer.complete(content);
             break;
           }
           
           // 增强提示词
           enhancedPrompt = '''$basePrompt
-请提供更详细的章节内容，包含更多细节描写、人物对话和情节发展。上次生成的内容过于简短，需要扩展。请至少生成800字以上的完整章节。''';
+请提供更详细的章节内容，包含更多细节描写、人物对话和情节发展。上次生成的内容过于简短，需要扩展。请至少生成800字以上的完整章节。同时，确保与前文的连贯性，明确引用前文中的事件和人物特征。''';
           
           // 短暂延迟，避免API限速
           await Future.delayed(Duration(milliseconds: 500));
@@ -789,6 +1151,12 @@ class AIService extends GetxService {
         // 短暂延迟，避免API限速
         await Future.delayed(Duration(seconds: 1));
       }
+    }
+    
+    // 在方法结束前打印对话历史长度，用于调试
+    if (conversationId != null) {
+      final messagesCount = ConversationManager.getMessages(conversationId).length;
+      print('generateChapterContent方法完成，当前对话历史消息数量: $messagesCount');
     }
     
     return completer.future;
@@ -861,7 +1229,7 @@ class AIService extends GetxService {
     return completer.future;
   }
 
-  // 使用大纲模型生成内容
+  // 使用大纲模型生成内容 - 简化参数，移除modelType相关代码
   Stream<String> generateOutlineTextStream({
     required String systemPrompt,
     required String userPrompt,
@@ -869,8 +1237,17 @@ class AIService extends GetxService {
     double? topP,
     int? maxTokens,
     double? repetitionPenalty,
+    String? conversationId,
+    String? novelTitle,
   }) async* {
     final outlineModel = _apiConfig.getOutlineModel();
+    
+    // 如果提供了小说标题但没有提供对话ID，使用相同的对话ID系统
+    if (novelTitle != null && conversationId == null) {
+      conversationId = _getNovelConversationId(novelTitle);
+      print('使用小说"$novelTitle"的对话ID: $conversationId');
+    }
+    
     yield* generateTextStream(
       systemPrompt: systemPrompt,
       userPrompt: userPrompt,
@@ -879,10 +1256,11 @@ class AIService extends GetxService {
       maxTokens: maxTokens ?? outlineModel.maxTokens,
       repetitionPenalty: repetitionPenalty ?? outlineModel.repetitionPenalty,
       specificModelConfig: outlineModel,
+      conversationId: conversationId,
     );
   }
 
-  // 使用章节模型生成内容
+  // 使用章节模型生成内容 - 简化参数，移除modelType相关代码
   Stream<String> generateChapterTextStream({
     required String systemPrompt,
     required String userPrompt,
@@ -890,8 +1268,17 @@ class AIService extends GetxService {
     double? topP,
     int? maxTokens,
     double? repetitionPenalty,
+    String? conversationId,
+    String? novelTitle,
   }) async* {
     final chapterModel = _apiConfig.getChapterModel();
+    
+    // 如果提供了小说标题但没有提供对话ID，使用相同的对话ID系统
+    if (novelTitle != null && conversationId == null) {
+      conversationId = _getNovelConversationId(novelTitle);
+      print('使用小说"$novelTitle"的对话ID: $conversationId');
+    }
+    
     yield* generateTextStream(
       systemPrompt: systemPrompt,
       userPrompt: userPrompt,
@@ -900,10 +1287,11 @@ class AIService extends GetxService {
       maxTokens: maxTokens ?? chapterModel.maxTokens,
       repetitionPenalty: repetitionPenalty ?? chapterModel.repetitionPenalty,
       specificModelConfig: chapterModel,
+      conversationId: conversationId,
     );
   }
 
-  Future<String> generateOutline(String prompt) async {
+  Future<String> generateOutline(String prompt, {String? novelTitle}) async {
     final completer = Completer<String>();
     final buffer = StringBuffer();
     int attempts = 0;
@@ -911,16 +1299,36 @@ class AIService extends GetxService {
     final int minLength = 150; // 大纲最小长度限制
     String enhancedPrompt = prompt;
     
+    // 获取或创建小说的对话ID
+    String? conversationId;
+    if (novelTitle != null) {
+      conversationId = _getNovelConversationId(novelTitle);
+      print('使用小说"$novelTitle"的对话ID: $conversationId');
+      
+      // 如果有对话ID，先清除可能存在的旧对话
+      if (conversationId != null) {
+        ConversationManager.clearConversation(conversationId);
+        print('已清除旧的对话历史，确保大纲生成不受干扰');
+      }
+      
+      // 初始化系统提示词
+      if (conversationId != null) {
+        ConversationManager.addMessage(conversationId, 'system', 
+          "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。确保每个章节之间情节连贯，角色发展合理。请为每章节设计与整体情节结构相符的内容，避免逻辑断层和人物行动不一致。");
+      }
+    }
+    
     while (attempts < maxRetries) {
       try {
         attempts++;
         buffer.clear(); // 清空之前的内容
         
-        await for (final chunk in generateTextStream(
+        await for (final chunk in generateOutlineTextStream(
           systemPrompt: "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。确保每个章节之间情节连贯，角色发展合理。请为每章节设计与整体情节结构相符的内容，避免逻辑断层和人物行动不一致。",
           userPrompt: enhancedPrompt,
           temperature: 0.7,
           maxTokens: 2000,
+          conversationId: conversationId, // 使用对话ID
         )) {
           buffer.write(chunk);
         }
@@ -932,6 +1340,33 @@ class AIService extends GetxService {
             enhancedPrompt = "$prompt\n\n你的上一次回答太简短了，请提供更详细的大纲内容，至少需要包含主要情节线和次要情节线，以及每个重要章节的具体内容描述。确保情节线连贯，角色发展一致。至少需要${minLength * 2}个字符。";
             continue;
           }
+        }
+        
+        // 如果大纲生成成功，将其添加到对话历史中
+        if (conversationId != null && content.length >= minLength) {
+          print('将大纲添加到对话历史中，对话ID: $conversationId');
+          
+          // 确保大纲内容格式化良好
+          String formattedOutline = content;
+          if (!formattedOutline.contains('```')) {
+            formattedOutline = "```\n" + formattedOutline + "\n```";
+          }
+          
+          // 添加大纲内容作为助手的回复
+          ConversationManager.addMessage(conversationId, 'assistant', 
+            "我已经为这部小说创建了如下大纲:\n\n" + formattedOutline);
+          
+          // 添加用户的确认消息
+          ConversationManager.addMessage(conversationId, 'user', 
+            "非常好的大纲，请在后续章节创作中严格遵循这个大纲。");
+            
+          // 添加助手的确认消息  
+          ConversationManager.addMessage(conversationId, 'assistant', 
+            "我已经记住了这个大纲，后续章节创作将严格遵循这个框架。每个章节都会与大纲描述的内容相符，保持情节连贯性和角色一致性。");
+          
+          // 添加系统提示，指导后续章节生成
+          ConversationManager.addMessage(conversationId, 'system', 
+            "请在生成章节内容时严格参照上述大纲，确保内容与大纲一致，情节连贯。每个章节应与大纲中描述的内容相符。生成章节时，应该保持整体小说世界观和角色设定的一致性。");
         }
         
         completer.complete(content);
@@ -956,12 +1391,20 @@ class AIService extends GetxService {
     required String? previousContent,
     double? temperature,
     int? maxTokens,
+    String? conversationId,
+    String? novelTitle,
   }) async {
     final completer = Completer<String>();
     final buffer = StringBuffer();
     int attempts = 0;
     final int maxRetries = 3;
     final int minLength = 200; // 大纲最小长度限制
+    
+    // 如果提供了小说标题但没有提供对话ID，创建或获取对话ID
+    if (novelTitle != null && conversationId == null) {
+      conversationId = _getNovelConversationId(novelTitle);
+      print('使用小说"$novelTitle"的对话ID: $conversationId');
+    }
     
     // 构建考虑连贯性的提示词
     String enhancedPrompt = prompt;
@@ -989,20 +1432,11 @@ $prompt
         buffer.clear(); // 清空之前的内容
         
         await for (final chunk in generateTextStream(
-          systemPrompt: '''你是一个专业的小说大纲创作助手，负责创作高质量、情节连贯的小说大纲。
-你的任务是生成符合用户要求的大纲内容，同时确保：
-1. 大纲逻辑连贯，情节发展自然
-2. 人物性格一致，行为合理
-3. 设定没有冲突
-4. 每个章节都有明确的剧情推进
-5. 主要情节线清晰可见，副线索合理穿插
-
-在生成内容时，请仔细分析用户提供的要求和任何前序大纲内容，确保新生成的内容与之前的内容保持高度连贯性。''',
+          systemPrompt: "你是一个专业的小说大纲创作助手，精通小说结构和故事发展。请根据用户需求提供连贯、合理的大纲。",
           userPrompt: enhancedPrompt,
           temperature: temperature ?? outlineModel.temperature,
-          topP: outlineModel.topP,
           maxTokens: maxTokens ?? outlineModel.maxTokens,
-          repetitionPenalty: outlineModel.repetitionPenalty,
+          conversationId: conversationId,
           specificModelConfig: outlineModel,
         )) {
           buffer.write(chunk);
@@ -1010,26 +1444,37 @@ $prompt
         
         String content = buffer.toString();
         
-        // 检查内容长度
         if (content.length < minLength) {
           if (attempts < maxRetries) {
+            print('生成的大纲内容太短，尝试重新生成 (尝试 $attempts/$maxRetries)');
             enhancedPrompt = '''
-$enhancedPrompt
+${enhancedPrompt}
 
-你的上一次回答太简短了，请提供更详细的大纲内容。要包含：
-- 更详细的情节描述
-- 更丰富的人物互动
-- 更清晰的冲突和转折
-- 至少生成${minLength * 2}个字符
+你的回答太简短了，请提供更详细的大纲内容，至少需要包含：
+1. 更详细的情节发展描述
+2. 主要角色的行动和动机
+3. 每个部分的主要冲突和解决方式
+4. 至少${minLength * 2}个字符的内容量
 ''';
-            
-            await Future.delayed(Duration(milliseconds: 500));
             continue;
           }
         }
         
+        // 如果大纲生成成功，将其添加到对话历史中
+        if (conversationId != null && content.length >= minLength) {
+          print('将智能大纲添加到对话历史中，对话ID: $conversationId');
+          // 添加大纲内容作为助手的回复
+          ConversationManager.addMessage(conversationId, 'assistant', 
+            "我已经为这部小说创建了如下完整大纲:\n\n" + content);
+          
+          // 添加系统提示，指导后续章节生成
+          ConversationManager.addMessage(conversationId, 'system', 
+            "请在生成章节内容时严格参照上述大纲，确保内容与大纲一致，情节连贯。每个章节应与大纲中描述的内容相符，角色行为和发展应保持一致。");
+        }
+        
         completer.complete(content);
         break;
+        
       } catch (e) {
         print('生成智能大纲失败，尝试次数：$attempts，错误：$e');
         if (attempts >= maxRetries) {
