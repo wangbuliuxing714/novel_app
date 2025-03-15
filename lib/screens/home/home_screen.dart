@@ -108,14 +108,6 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.edit_note),
-              title: const Text('草稿本'),
-              onTap: () {
-                Get.back();
-                Get.toNamed('/draft');
-              },
-            ),
-            ListTile(
               leading: const Icon(Icons.book),
               title: const Text('知识库'),
               onTap: () {

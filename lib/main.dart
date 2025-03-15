@@ -8,7 +8,6 @@ import 'package:novel_app/screens/home/home_screen.dart';
 import 'package:novel_app/screens/storage/storage_screen.dart';
 import 'package:novel_app/screens/chapter_detail/chapter_detail_screen.dart';
 import 'package:novel_app/screens/chapter_edit/chapter_edit_screen.dart';
-import 'package:novel_app/screens/draft/draft_screen.dart';
 import 'package:novel_app/screens/character_type/character_type_screen.dart';
 import 'package:novel_app/screens/library/library_screen.dart';
 import 'package:novel_app/screens/tts/tts_screen.dart';
@@ -20,9 +19,6 @@ import 'package:novel_app/screens/announcement_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:novel_app/services/cache_service.dart';
 import 'package:novel_app/controllers/theme_controller.dart';
-import 'package:novel_app/controllers/draft_controller.dart';
-import 'package:novel_app/services/license_service.dart';
-import 'package:novel_app/screens/license_screen.dart';
 import 'package:novel_app/controllers/genre_controller.dart';
 import 'package:novel_app/controllers/style_controller.dart';
 import 'package:novel_app/services/character_card_service.dart';
@@ -38,6 +34,8 @@ import 'package:novel_app/services/character_generator_service.dart';
 import 'package:novel_app/services/background_generator_service.dart';
 import 'package:novel_app/controllers/knowledge_base_controller.dart';
 import 'package:novel_app/screens/import_screen.dart';
+import 'package:novel_app/services/license_service.dart';
+import 'package:novel_app/screens/license_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -86,7 +84,6 @@ void main() async {
   
   // 然后初始化控制器
   Get.put(NovelController());
-  Get.put(DraftController());
   Get.put(GenreController());
   Get.put(StyleController());
   
@@ -155,7 +152,6 @@ class MyApp extends StatelessWidget {
         GetPage(name: '/storage', page: () => StorageScreen()),
         GetPage(name: '/chapter_detail', page: () => ChapterDetailScreen()),
         GetPage(name: '/chapter_edit', page: () => ChapterEditScreen()),
-        GetPage(name: '/draft', page: () => DraftScreen()),
         GetPage(name: '/library', page: () => LibraryScreen()),
         GetPage(name: '/character_type', page: () => CharacterTypeScreen()),
         GetPage(name: '/tools', page: () => ToolsScreen()),

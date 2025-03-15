@@ -133,6 +133,85 @@ class NovelGeneratorService extends GetxService {
     return _cacheService.getContent(chapterKey);
   }
 
+  // 检查章节大纲内容的连贯性
+  Future<String> _ensureOutlineCoherence(String newOutlineContent, String previousOutlineContent) async {
+    // 如果没有之前的内容作为参考，直接返回新内容
+    if (previousOutlineContent.isEmpty) {
+      return newOutlineContent;
+    }
+    
+    // 检测连贯性问题的关键词
+    final List<String> coherenceIssueKeywords = [
+      '前后矛盾', '情节断层', '性格变化', '突然出现', '莫名其妙', 
+      '无法解释', '缺乏连续性', '不一致', '突兀'
+    ];
+    
+    // 构建检查连贯性的提示词
+    final checkPrompt = '''
+请分析以下两部分小说大纲内容，检查它们之间是否存在连贯性问题：
+
+第一部分（先前的大纲内容）：
+$previousOutlineContent
+
+第二部分（新生成的大纲内容）：
+$newOutlineContent
+
+请仅回答"有连贯性问题"或"无连贯性问题"。
+''';
+
+    // 检查连贯性
+    String coherenceCheckResult = '';
+    try {
+      coherenceCheckResult = await _aiService.generateText(
+        systemPrompt: "你是一个专业的小说编辑助手，请检查两段大纲内容之间是否存在连贯性问题，如情节断层、人物行为不一致等。只回答'有连贯性问题'或'无连贯性问题'。",
+        userPrompt: checkPrompt,
+        temperature: 0.2, // 低温度，提高确定性
+        maxTokens: 50, // 简短回答即可
+      );
+    } catch (e) {
+      print('检查大纲连贯性失败: $e');
+      return newOutlineContent; // 出错时返回原始内容
+    }
+    
+    // 如果检测到连贯性问题，尝试修复
+    if (coherenceCheckResult.toLowerCase().contains("有连贯性问题")) {
+      print('检测到大纲连贯性问题，尝试修复...');
+      try {
+        // 构建修复提示词
+        final fixPrompt = '''
+请修复以下小说大纲内容之间存在的连贯性问题。确保修复后的内容在情节发展、人物行为和设定上保持一致性。
+
+第一部分（先前的大纲内容，不需要修改）：
+$previousOutlineContent
+
+第二部分（需要修复的大纲内容）：
+$newOutlineContent
+
+请提供修复后的第二部分内容，确保与第一部分情节和人物发展保持连贯。
+''';
+
+        // 尝试修复连贯性问题
+        String fixedContent = await _aiService.generateText(
+          systemPrompt: "你是一个专业的小说编辑助手，请修复两段大纲内容之间的连贯性问题，确保情节发展自然，人物行为一致，设定不冲突。",
+          userPrompt: fixPrompt,
+          temperature: 0.7,
+          maxTokens: 2000,
+        );
+        
+        // 如果修复后的内容不为空，返回修复后的内容
+        if (fixedContent.isNotEmpty) {
+          print('大纲连贯性问题修复完成');
+          return fixedContent;
+        }
+      } catch (e) {
+        print('修复大纲连贯性失败: $e');
+      }
+    }
+    
+    // 如果没有问题或修复失败，返回原始内容
+    return newOutlineContent;
+  }
+
   // 保存生成的内容到缓存
   Future<void> _cacheContent(String chapterKey, String content) async {
     await _cacheService.cacheContent(chapterKey, content);
@@ -158,41 +237,46 @@ class NovelGeneratorService extends GetxService {
     required String theme,
     required String targetReaders,
     required int totalChapters,
+    Map<String, CharacterCard>? characterCards,
+    List<CharacterType>? characterTypes,
     void Function(String)? onProgress,
     void Function(String)? onContent,
     bool isShortNovel = false,
-    int wordCount = 15000,
-    Map<String, CharacterCard>? characterCards,
-    List<CharacterType>? characterTypes,
+    int wordCount = 10000,
   }) async {
     try {
-      if (isShortNovel) {
-        _updateProgress("正在生成短篇小说大纲...");
-      } else {
-        _updateProgress("正在生成大纲...");
+      // 基本提示词
+      String masterPrompt = OutlineGeneration.getSystemPrompt(title, genre, theme);
+      String outlinePrompt = '';
+      
+      // 目标读者提示词
+      String targetReaderPrompt = '';
+      if (targetReaders.isNotEmpty) {
+        targetReaderPrompt = '''
+目标读者：$targetReaders
+请确保故事内容、风格和表达方式符合目标读者的喜好和阅读习惯。
+''';
       }
       
-      // 获取提示词包内容
-      final promptPackageController = Get.find<PromptPackageController>();
-      final masterPrompt = promptPackageController.getCurrentPromptContent('master');
-      final outlinePrompt = promptPackageController.getCurrentPromptContent('outline');
-      final targetReaderPrompt = promptPackageController.getTargetReaderPromptContent(targetReaders);
-      
-      // 构建包含角色信息的提示词
+      // 角色信息提示词
       String characterPrompt = '';
-      if (characterCards != null && characterCards.isNotEmpty && characterTypes != null) {
-        characterPrompt = '小说角色设定：\n';
+      if (characterCards != null && characterCards.isNotEmpty && characterTypes != null && characterTypes.isNotEmpty) {
+        characterPrompt = '主要角色信息：\n\n';
         for (final type in characterTypes) {
           final card = characterCards[type.id];
-          if (card != null) {
-            characterPrompt += '${type.name}：${card.name}\n';
+          if (card != null && card.name.isNotEmpty) {
+            characterPrompt += '角色：${card.name}\n';
+            
+            if (card.age != null && card.age!.isNotEmpty) {
+              characterPrompt += '年龄：${card.age}\n';
+            }
             
             if (card.gender != null && card.gender!.isNotEmpty) {
               characterPrompt += '性别：${card.gender}\n';
             }
             
-            if (card.age != null && card.age!.isNotEmpty) {
-              characterPrompt += '年龄：${card.age}\n';
+            if (card.bodyDescription != null && card.bodyDescription!.isNotEmpty) {
+              characterPrompt += '外貌：${card.bodyDescription}\n';
             }
             
             if (card.personalityTraits != null && card.personalityTraits!.isNotEmpty) {
@@ -201,19 +285,6 @@ class NovelGeneratorService extends GetxService {
             
             if (card.background != null && card.background!.isNotEmpty) {
               characterPrompt += '背景：${card.background}\n';
-            }
-            
-            // 添加更详细的角色信息
-            if (card.bodyDescription != null && card.bodyDescription!.isNotEmpty) {
-              characterPrompt += '身体特征：${card.bodyDescription}\n';
-            }
-            
-            if (card.faceFeatures != null && card.faceFeatures!.isNotEmpty) {
-              characterPrompt += '面部特征：${card.faceFeatures}\n';
-            }
-            
-            if (card.motivation != null && card.motivation!.isNotEmpty) {
-              characterPrompt += '动机：${card.motivation}\n';
             }
             
             if (card.shortTermGoals != null && card.shortTermGoals!.isNotEmpty) {
@@ -251,33 +322,247 @@ class NovelGeneratorService extends GetxService {
         }
       }
       
-      // 构建提示词
-      final prompt = '''
+      // 构建基础提示词
+      final basePrompt = '''
 ${masterPrompt.isNotEmpty ? masterPrompt + '\n\n' : ''}
 ${outlinePrompt.isNotEmpty ? outlinePrompt + '\n\n' : ''}
 ${targetReaderPrompt.isNotEmpty ? targetReaderPrompt + '\n\n' : ''}
 ${characterPrompt.isNotEmpty ? characterPrompt + '\n\n' : ''}
-${outlineFormatPrompt}
 ''';
+
+      // 分批生成大纲
+      final StringBuffer fullOutlineBuffer = StringBuffer();
       
-      // 一次性生成所有章节的大纲
-      String outlineContent = '';
+      // 添加大纲的整体结构和主要情节线（只生成一次）
+      if (onProgress != null) {
+        onProgress('正在生成小说整体结构...');
+      }
       
-      // 修改为使用专门的大纲生成方法，对接大纲模型
+      // 构建第一部分提示词（整体结构和主要情节线）
+      final structurePrompt = '''
+$basePrompt
+请为这部名为《$title》的$genre小说创作大纲的前两部分：整体架构和主要情节线。
+不要生成具体章节内容，只需要完成整体架构和主要情节线两部分。
+
+大纲格式要求：
+1. 第一层：整体架构（三幕式结构）
+   - 开端（约占20%）：介绍背景、人物、核心冲突
+   - 发展（约占60%）：矛盾升级、情节推进、人物成长
+   - 高潮（约占20%）：最终决战、结局呈现
+
+2. 第二层：主要情节线
+   - 主线：核心冲突的发展脉络
+   - 支线A：重要人物关系发展
+   - 支线B：次要矛盾发展
+   （根据需要可以有更多支线）
+
+请按照以下格式输出：
+
+一、整体架构
+[详细说明三幕式结构的具体内容]
+
+二、主要情节线
+[列出主线和重要支线的发展脉络]
+''';
+
+      // 生成整体结构
+      String structureContent = '';
       await for (final chunk in _aiService.generateOutlineTextStream(
-        systemPrompt: prompt,
-        userPrompt: outlinePrompt,
-        maxTokens: _getMaxTokensForChapter(0) * 2, // 增加token限制以容纳完整大纲
+        systemPrompt: structurePrompt,
+        userPrompt: "请仅生成整体架构和主要情节线部分，不要生成具体章节",
+        maxTokens: _getMaxTokensForChapter(0),
         temperature: 0.7,
       )) {
-        outlineContent += chunk;
+        structureContent += chunk;
         if (onContent != null) {
           onContent(chunk);
         }
       }
+      
+      fullOutlineBuffer.writeln(structureContent.trim());
+      fullOutlineBuffer.writeln("\n三、具体章节");
+      
+      // 将结构和情节线保存下来，用于后续章节生成参考
+      final String structureAndPlotContent = structureContent.trim();
+      
+      // 保存已生成的章节大纲内容，用于后续章节生成参考
+      StringBuffer generatedChaptersBuffer = StringBuffer();
+      
+      // 分批生成章节大纲
+      final int batchSize = 5; // 减少每批处理的章节数，提高连贯性
+      for (int startChapter = 1; startChapter <= totalChapters; startChapter += batchSize) {
+        final int endChapter = (startChapter + batchSize - 1) > totalChapters 
+            ? totalChapters 
+            : (startChapter + batchSize - 1);
+            
+        if (onProgress != null) {
+          onProgress('正在生成第$startChapter-$endChapter章大纲...');
+        }
+        
+        // 构建参考上下文，让AI了解已生成的内容
+        String contextReference = '';
+        if (startChapter > 1 && generatedChaptersBuffer.isNotEmpty) {
+          // 只提供最近生成的部分作为上下文，避免上下文过长
+          contextReference = '''
+这是已经生成的章节大纲，请确保新生成的章节与之保持情节连贯性：
 
-      // 格式化大纲
-      outlineContent = OutlineGeneration.formatOutline(outlineContent);
+${generatedChaptersBuffer.toString().trim()}
+
+请继续完成后续章节大纲，保持情节的自然发展和人物成长的连贯性。
+''';
+        }
+        
+        // 构建章节批次提示词
+        final batchPrompt = '''
+$basePrompt
+
+${structureAndPlotContent}
+
+${contextReference.isNotEmpty ? contextReference + '\n\n' : ''}
+
+请为这部名为《$title》的$genre小说创作第$startChapter章到第$endChapter章的大纲。
+
+创作要求：
+$theme
+请严格按照前面的整体架构和主要情节线安排，确保故事情节连贯，不要出现逻辑断层。
+请注意主要角色的发展弧线，确保角色行为与其性格特点和目标一致。
+
+大纲格式要求：
+每章需包含：
+- 章节标题（简洁有力）
+- 主要情节（2-3个关键点）
+- 次要情节（1-2个补充点）
+- 人物发展（重要人物的变化）
+- 伏笔/悬念（如果有）
+
+请按照以下格式输出：
+
+${startChapter == 1 ? '' : '继续上文，'}从第$startChapter章开始：
+
+第${startChapter}章：章节标题
+主要情节：
+- 情节点1
+- 情节点2
+次要情节：
+- 情节点A
+人物发展：
+- 变化点1
+伏笔/悬念：
+- 伏笔点1
+
+第${startChapter+1}章：...（后续章节）
+''';
+
+        // 使用智能大纲生成
+        String batchContent = '';
+        if (startChapter > 1 && generatedChaptersBuffer.isNotEmpty) {
+          // 使用带有上下文的智能大纲生成
+          final userPrompt = "请按照要求生成第$startChapter到第$endChapter章的详细大纲，确保与前面章节情节连贯";
+          
+          if (onProgress != null) {
+            onProgress('正在使用智能生成模式创建大纲...');
+          }
+          
+          try {
+            // 获取前一批次的内容作为上下文
+            String previousContent = generatedChaptersBuffer.toString().trim();
+            // 限制前一部分的长度，避免提示词过长
+            if (previousContent.length > 3000) {
+              previousContent = previousContent.substring(previousContent.length - 3000);
+            }
+            
+            // 使用智能大纲生成
+            batchContent = await _aiService.generateSmartOutline(
+              prompt: batchPrompt,
+              previousContent: previousContent,
+              temperature: 0.7,
+              maxTokens: _getMaxTokensForChapter(0) * 2,
+            );
+            
+            if (onContent != null) {
+              onContent(batchContent);
+            }
+          } catch (e) {
+            print('智能大纲生成失败，切换到标准模式: $e');
+            // 智能生成失败，回退到标准流式生成
+            if (onProgress != null) {
+              onProgress('智能模式失败，切换到标准模式...');
+            }
+            
+            // 使用标准流式生成
+            await for (final chunk in _aiService.generateOutlineTextStream(
+              systemPrompt: batchPrompt,
+              userPrompt: "请按照要求生成第$startChapter到第$endChapter章的详细大纲，确保与前面章节情节连贯",
+              maxTokens: _getMaxTokensForChapter(0) * 2,
+              temperature: 0.7,
+            )) {
+              batchContent += chunk;
+              if (onContent != null) {
+                onContent(chunk);
+              }
+            }
+          }
+        } else {
+          // 第一批次使用标准流式生成
+          await for (final chunk in _aiService.generateOutlineTextStream(
+            systemPrompt: batchPrompt,
+            userPrompt: "请按照要求生成第$startChapter到第$endChapter章的详细大纲",
+            maxTokens: _getMaxTokensForChapter(0) * 2,
+            temperature: 0.7,
+          )) {
+            batchContent += chunk;
+            if (onContent != null) {
+              onContent(chunk);
+            }
+          }
+        }
+        
+        // 处理批次内容，移除可能的额外标题
+        String processedBatch = batchContent.trim();
+        if (startChapter > 1) {
+          // 如果不是第一批，移除可能出现的"三、具体章节"标题
+          processedBatch = processedBatch.replaceFirst(RegExp(r'^三、具体章节\s*', multiLine: true), '');
+          
+          // 检查并修复连贯性问题
+          if (generatedChaptersBuffer.isNotEmpty) {
+            if (onProgress != null) {
+              onProgress('正在检查大纲连贯性...');
+            }
+            // 获取前一批次的最后部分作为参考上下文
+            String previousContent = generatedChaptersBuffer.toString().trim();
+            // 限制前一部分的长度，避免提示词过长
+            if (previousContent.length > 2000) {
+              previousContent = previousContent.substring(previousContent.length - 2000);
+            }
+            
+            // 检查并修复连贯性
+            processedBatch = await _ensureOutlineCoherence(processedBatch, previousContent);
+            
+            if (onProgress != null) {
+              onProgress('大纲连贯性检查完成，继续生成...');
+            }
+          }
+        }
+        
+        fullOutlineBuffer.writeln(processedBatch);
+        
+        // 保存这一批次的内容，用于后续参考
+        generatedChaptersBuffer.writeln(processedBatch);
+        
+        // 如果生成内容过长，只保留最近的几个章节作为上下文
+        if (generatedChaptersBuffer.length > 4000) {
+          String currentContent = generatedChaptersBuffer.toString();
+          // 保留后半部分
+          generatedChaptersBuffer = StringBuffer();
+          generatedChaptersBuffer.write(currentContent.substring(currentContent.length ~/ 2));
+        }
+        
+        // 短暂延迟，避免API限流
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      // 格式化完整大纲
+      String outlineContent = OutlineGeneration.formatOutline(fullOutlineBuffer.toString());
       
       if (onProgress != null) {
         if (isShortNovel) {

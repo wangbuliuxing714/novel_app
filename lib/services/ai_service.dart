@@ -917,7 +917,7 @@ class AIService extends GetxService {
         buffer.clear(); // 清空之前的内容
         
         await for (final chunk in generateTextStream(
-          systemPrompt: "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。",
+          systemPrompt: "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。确保每个章节之间情节连贯，角色发展合理。请为每章节设计与整体情节结构相符的内容，避免逻辑断层和人物行动不一致。",
           userPrompt: enhancedPrompt,
           temperature: 0.7,
           maxTokens: 2000,
@@ -925,42 +925,150 @@ class AIService extends GetxService {
           buffer.write(chunk);
         }
         
-        final outline = buffer.toString();
+        String content = buffer.toString();
         
-        // 检查内容长度是否符合要求
-        if (outline.length >= minLength) {
-          completer.complete(outline);
-          break;
-        } else {
-          print('大纲内容过短 (${outline.length} < $minLength)，尝试重新生成 (尝试 $attempts/$maxRetries)');
-          
-          // 如果是最后一次尝试，返回已有内容而不是失败
-          if (attempts >= maxRetries) {
-            completer.complete(outline);
-            break;
+        if (content.length < minLength) {
+          if (attempts < maxRetries) {
+            enhancedPrompt = "$prompt\n\n你的上一次回答太简短了，请提供更详细的大纲内容，至少需要包含主要情节线和次要情节线，以及每个重要章节的具体内容描述。确保情节线连贯，角色发展一致。至少需要${minLength * 2}个字符。";
+            continue;
           }
-          
-          // 增强提示词
-          enhancedPrompt = '''$prompt
-请提供更详细的大纲，包含更多情节点和角色发展。上次生成的大纲过于简短，需要扩展。请至少生成300字以上的完整大纲。''';
-          
-          // 短暂延迟，避免API限速
-          await Future.delayed(Duration(milliseconds: 500));
         }
-      } catch (e) {
-        print('生成大纲错误: $e，尝试重新生成 (尝试 $attempts/$maxRetries)');
         
+        completer.complete(content);
+        break;
+      } catch (e) {
+        print('生成大纲失败，尝试次数：$attempts，错误：$e');
         if (attempts >= maxRetries) {
-          completer.completeError('生成大纲失败: $e');
+          completer.completeError('生成大纲失败：$e');
           break;
         }
         
-        // 短暂延迟，避免API限速
         await Future.delayed(Duration(seconds: 1));
       }
     }
     
     return completer.future;
+  }
+
+  // 使用大纲模型生成更智能、更连贯的大纲
+  Future<String> generateSmartOutline({
+    required String prompt,
+    required String? previousContent,
+    double? temperature,
+    int? maxTokens,
+  }) async {
+    final completer = Completer<String>();
+    final buffer = StringBuffer();
+    int attempts = 0;
+    final int maxRetries = 3;
+    final int minLength = 200; // 大纲最小长度限制
+    
+    // 构建考虑连贯性的提示词
+    String enhancedPrompt = prompt;
+    if (previousContent != null && previousContent.isNotEmpty) {
+      enhancedPrompt = '''
+这是已经生成的大纲内容：
+$previousContent
+
+请基于以上大纲内容继续生成，确保情节连贯，人物发展合理：
+$prompt
+
+要求：
+1. 严格遵循之前生成内容中的设定、人物特征和关系
+2. 确保情节发展合理，与前文相衔接
+3. 避免出现前后矛盾或逻辑断层
+4. 人物行为和对话要符合其性格特点和动机
+''';
+    }
+    
+    final outlineModel = _apiConfig.getOutlineModel();
+    
+    while (attempts < maxRetries) {
+      try {
+        attempts++;
+        buffer.clear(); // 清空之前的内容
+        
+        await for (final chunk in generateTextStream(
+          systemPrompt: '''你是一个专业的小说大纲创作助手，负责创作高质量、情节连贯的小说大纲。
+你的任务是生成符合用户要求的大纲内容，同时确保：
+1. 大纲逻辑连贯，情节发展自然
+2. 人物性格一致，行为合理
+3. 设定没有冲突
+4. 每个章节都有明确的剧情推进
+5. 主要情节线清晰可见，副线索合理穿插
+
+在生成内容时，请仔细分析用户提供的要求和任何前序大纲内容，确保新生成的内容与之前的内容保持高度连贯性。''',
+          userPrompt: enhancedPrompt,
+          temperature: temperature ?? outlineModel.temperature,
+          topP: outlineModel.topP,
+          maxTokens: maxTokens ?? outlineModel.maxTokens,
+          repetitionPenalty: outlineModel.repetitionPenalty,
+          specificModelConfig: outlineModel,
+        )) {
+          buffer.write(chunk);
+        }
+        
+        String content = buffer.toString();
+        
+        // 检查内容长度
+        if (content.length < minLength) {
+          if (attempts < maxRetries) {
+            enhancedPrompt = '''
+$enhancedPrompt
+
+你的上一次回答太简短了，请提供更详细的大纲内容。要包含：
+- 更详细的情节描述
+- 更丰富的人物互动
+- 更清晰的冲突和转折
+- 至少生成${minLength * 2}个字符
+''';
+            
+            await Future.delayed(Duration(milliseconds: 500));
+            continue;
+          }
+        }
+        
+        completer.complete(content);
+        break;
+      } catch (e) {
+        print('生成智能大纲失败，尝试次数：$attempts，错误：$e');
+        if (attempts >= maxRetries) {
+          completer.completeError('生成智能大纲失败：$e');
+          break;
+        }
+        
+        await Future.delayed(Duration(seconds: 1));
+      }
+    }
+    
+    return completer.future;
+  }
+
+  // 非流式生成文本内容的方法
+  Future<String> generateText({
+    required String systemPrompt,
+    required String userPrompt,
+    double temperature = 0.7,
+    double? topP,
+    int? maxTokens,
+    double? repetitionPenalty,
+    ModelConfig? specificModelConfig,
+  }) async {
+    final buffer = StringBuffer();
+    
+    await for (final chunk in generateTextStream(
+      systemPrompt: systemPrompt,
+      userPrompt: userPrompt,
+      temperature: temperature,
+      topP: topP ?? 1.0,
+      maxTokens: maxTokens,
+      repetitionPenalty: repetitionPenalty ?? 1.3,
+      specificModelConfig: specificModelConfig,
+    )) {
+      buffer.write(chunk);
+    }
+    
+    return buffer.toString();
   }
 
   void dispose() {
