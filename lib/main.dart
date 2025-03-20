@@ -13,6 +13,7 @@ import 'package:novel_app/screens/library/library_screen.dart';
 import 'package:novel_app/screens/tts/tts_screen.dart';
 import 'package:novel_app/services/ai_service.dart';
 import 'package:novel_app/services/novel_generator_service.dart';
+import 'package:novel_app/services/langchain_novel_generator_service.dart';
 import 'package:novel_app/services/content_review_service.dart';
 import 'package:novel_app/services/announcement_service.dart';
 import 'package:novel_app/screens/announcement_screen.dart';
@@ -34,14 +35,18 @@ import 'package:novel_app/services/character_generator_service.dart';
 import 'package:novel_app/services/background_generator_service.dart';
 import 'package:novel_app/controllers/knowledge_base_controller.dart';
 import 'package:novel_app/screens/import_screen.dart';
-import 'package:novel_app/services/license_service.dart';
-import 'package:novel_app/screens/license_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // 初始化 Hive
-  await Hive.initFlutter();
+  if (kIsWeb) {
+    // Web平台使用特殊初始化方式
+    await Hive.initFlutter('novel_app_hive');
+  } else {
+    // 非Web平台使用标准初始化方式
+    await Hive.initFlutter();
+  }
   
   // 注册 Novel 和 Chapter 适配器
   if (!Hive.isAdapterRegistered(0)) {
@@ -52,8 +57,19 @@ void main() async {
   }
 
   // 打开 Hive 盒子
-  await Hive.openBox('novels');
-  await Hive.openBox('generated_chapters');
+  try {
+    await Hive.openBox('novels');
+    await Hive.openBox('generated_chapters');
+  } catch (e) {
+    print('打开Hive盒子失败: $e');
+    // 如果无法打开，清除并重新创建盒子
+    await Hive.deleteBoxFromDisk('novels').catchError((_) {});
+    await Hive.deleteBoxFromDisk('generated_chapters').catchError((_) {});
+    
+    // 重新尝试打开
+    await Hive.openBox('novels');
+    await Hive.openBox('generated_chapters');
+  }
 
   // 初始化SharedPreferences（确保最先初始化）
   final prefs = await SharedPreferences.getInstance();
@@ -81,6 +97,9 @@ void main() async {
   // 先初始化基础服务
   Get.put(NovelGeneratorService(aiService, cacheService, apiConfig));
   Get.put(ContentReviewService(aiService, apiConfig, cacheService));
+  
+  // 初始化LangChain小说生成服务（新增）
+  Get.put(LangchainNovelGeneratorService(aiService, cacheService, apiConfig));
   
   // 然后初始化控制器
   Get.put(NovelController());
@@ -118,12 +137,6 @@ void main() async {
     print('没有新公告需要显示');
   }
 
-  // 只在Web平台初始化许可证服务
-  if (kIsWeb) {
-    final licenseService = Get.put(LicenseService());
-    await licenseService.init();
-  }
-
   runApp(const MyApp());
 }
 
@@ -138,14 +151,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         useMaterial3: true,
       ),
-      home: kIsWeb  // 只在Web平台检查许可证
-          ? Obx(() {
-              final licenseService = Get.find<LicenseService>();
-              return licenseService.isLicensed.value
-                  ? const HomeScreen()  // 已激活许可证，显示主页
-                  : LicenseScreen();    // 未激活许可证，显示激活页面
-            })
-          : const HomeScreen(),  // 非Web平台直接显示主页
+      home: const HomeScreen(),  // 直接显示主页，无需许可证检查
       initialRoute: '/',
       getPages: [
         GetPage(name: '/', page: () => HomeScreen()),

@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import 'package:uuid/uuid.dart';
 
 part 'novel.g.dart';
 
@@ -24,6 +25,12 @@ class Novel {
   
   @HiveField(6)
   final DateTime createdAt;
+  
+  @HiveField(7)
+  final DateTime? updatedAt;
+  
+  @HiveField(8)
+  final String? style;
 
   String get createTime => createdAt.toString().split('.')[0];
 
@@ -37,7 +44,9 @@ class Novel {
     required this.content,
     required this.chapters,
     required this.createdAt,
-  }) : this.id = id ?? DateTime.now().millisecondsSinceEpoch.toString();
+    this.updatedAt,
+    this.style,
+  }) : this.id = id ?? const Uuid().v4();
 
   Novel copyWith({
     String? title,
@@ -46,6 +55,8 @@ class Novel {
     String? content,
     List<Chapter>? chapters,
     DateTime? createdAt,
+    DateTime? updatedAt,
+    String? style,
     String? id,
   }) {
     return Novel(
@@ -55,6 +66,8 @@ class Novel {
       content: content ?? this.content,
       chapters: chapters ?? this.chapters,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      style: style ?? this.style,
       id: id ?? this.id,
     );
   }
@@ -67,10 +80,12 @@ class Novel {
     'content': content,
     'chapters': chapters.map((c) => c.toJson()).toList(),
     'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt?.toIso8601String(),
+    'style': style,
   };
 
   factory Novel.fromJson(Map<String, dynamic> json) => Novel(
-    id: json['id'] as String?,
+    id: json['id'] as String,
     title: json['title'] as String,
     genre: json['genre'] as String,
     outline: json['outline'] as String,
@@ -79,6 +94,10 @@ class Novel {
         .map((c) => Chapter.fromJson(c as Map<String, dynamic>))
         .toList(),
     createdAt: DateTime.parse(json['createdAt'] as String),
+    updatedAt: json['updatedAt'] != null
+        ? DateTime.parse(json['updatedAt'] as String)
+        : null,
+    style: json['style'] as String?,
   );
 
   Chapter get outlineChapter {

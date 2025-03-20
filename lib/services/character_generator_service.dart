@@ -101,6 +101,9 @@ $promptContent
         return CharacterCard(
           id: const Uuid().v4(),
           name: json['name'] ?? '未命名角色',
+          characterTypeId: preferredTypes != null && preferredTypes.isNotEmpty 
+              ? preferredTypes[0].id 
+              : const Uuid().v4(),
           gender: json['gender'],
           age: json['age'],
           race: json['race'],
@@ -153,5 +156,43 @@ $promptContent
     }
     
     throw Exception('无法从响应中提取JSON数据');
+  }
+
+  Future<List<CharacterCard>> generateCharactersFromJson(String jsonData) async {
+    try {
+      final List<dynamic> charactersJson = jsonDecode(jsonData);
+      
+      // 转换为CharacterCard对象，并指定一个默认的characterTypeId
+      return charactersJson.map((json) => CharacterCard(
+        id: const Uuid().v4(),
+        name: json['name'] ?? '未命名角色',
+        characterTypeId: const Uuid().v4(), // 使用新的UUID作为默认characterTypeId
+        gender: json['gender'] ?? '',
+        age: json['age'] ?? '',
+        race: json['race'],
+        bodyDescription: json['bodyDescription'] ?? '',
+        faceFeatures: json['faceFeatures'],
+        clothingStyle: json['clothingStyle'],
+        accessories: json['accessories'],
+        personalityTraits: json['personalityTraits'] ?? '',
+        personalityComplexity: json['personalityComplexity'],
+        personalityFormation: json['personalityFormation'],
+        background: json['background'] ?? '',
+        lifeExperiences: json['lifeExperiences'],
+        pastEvents: json['pastEvents'],
+        shortTermGoals: json['shortTermGoals'],
+        longTermGoals: json['longTermGoals'],
+        motivation: json['motivation'],
+        specialAbilities: json['specialAbilities'],
+        normalSkills: json['normalSkills'],
+        familyRelations: json['familyRelations'],
+        friendships: json['friendships'],
+        enemies: json['enemies'],
+        loveInterests: json['loveInterests'],
+      )).toList();
+    } catch (e) {
+      print('解析JSON数据失败: $e');
+      return [];
+    }
   }
 } 

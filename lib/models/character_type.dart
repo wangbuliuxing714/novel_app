@@ -7,7 +7,7 @@ class CharacterType {
   CharacterType({
     required this.id,
     required this.name,
-    required this.description,
+    this.description = '',
     required this.color,
   });
 
@@ -16,7 +16,7 @@ class CharacterType {
     return CharacterType(
       id: json['id'] as String,
       name: json['name'] as String,
-      description: json['description'] as String,
+      description: json['description'] ?? '',
       color: json['color'] as String,
     );
   }

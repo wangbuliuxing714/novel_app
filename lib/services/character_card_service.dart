@@ -14,10 +14,17 @@ class CharacterCardService extends GetxService {
 
   // 加载所有角色卡片
   void _loadCards() {
-    final String? cardsJson = _prefs.getString(CARDS_KEY);
-    if (cardsJson != null) {
-      final List<dynamic> decodedList = jsonDecode(cardsJson);
-      cards.value = decodedList.map((json) => CharacterCard.fromJson(json)).toList();
+    try {
+      final String? cardsJson = _prefs.getString(CARDS_KEY);
+      if (cardsJson != null) {
+        final List<dynamic> decodedList = jsonDecode(cardsJson);
+        cards.value = decodedList.map((json) => CharacterCard.fromJson(json)).toList();
+      }
+    } catch (e) {
+      print('加载角色卡片失败: $e');
+      // 出错时清空角色卡片并保存，重置数据
+      cards.clear();
+      _saveCards();
     }
   }
 

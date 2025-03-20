@@ -56,6 +56,7 @@ class _CharacterCardEditScreenState extends State<CharacterCardEditScreen> {
     final card = CharacterCard(
       id: widget.card?.id ?? const Uuid().v4(),
       name: _nameController.text,
+      characterTypeId: widget.card?.characterTypeId ?? const Uuid().v4(),
       gender: _controllers['gender']!.text,
       age: _controllers['age']!.text,
       race: _controllers['race']!.text,
