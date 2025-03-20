@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AI小说生成器 - 页面重定向</title>
+  <script>
+    // 从URL中获取路径
+    var segmentCount = 1;
+    var location = window.location;
+    var baseUrl = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
+    var path = location.pathname.split('/').slice(0, segmentCount + 1).join('/') + '/';
+    var redirectUrl = baseUrl + path + '?p=' + location.pathname.slice(path.length);
+    
+    // 处理查询参数
+    if (location.search) {
+      redirectUrl += location.search + '&' + location.hash;
+    } else {
+      redirectUrl += '?' + location.hash;
+    }
+    
+    // 重定向到主页
+    sessionStorage.setItem('redirect', location.pathname + location.search + location.hash);
+    window.location.href = baseUrl + path;
+  </script>
+  <meta http-equiv="refresh" content="0;URL='/novel_app_web/'">
+</head>
+<body>
+  <h1>页面重定向中...</h1>
+  <p>如果页面没有自动跳转，<a href="/novel_app_web/">点击这里</a>回到主页。</p>
+</body>
+</html> 
