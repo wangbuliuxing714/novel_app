@@ -40,6 +40,18 @@
   <script>
     // The value below is injected by flutter build, do not touch.
     var serviceWorkerVersion = null;
+    
+    // 设置必要的 buildConfig
+    window._flutter = window._flutter || {};
+    window._flutter.buildConfig = {
+      engineRevision: "latest",
+      builds: [
+        {
+          renderer: "canvaskit",
+          compileTarget: "dart2js"
+        }
+      ]
+    };
   </script>
   <!-- This script adds the flutter initialization JS code -->
   <script src="flutter.js"></script>
@@ -82,30 +94,13 @@
     <div class="loader"></div>
   </div>
   <script>
-    function _onLoad() {
-      // Download main.dart.js
-      window._flutter = window._flutter || {};
-      window._flutter.loader = window._flutter.loader || {};
-      window._flutter.loader.load = window._flutter.loader.load || function(config) {
-        // 手动加载main.dart.js
-        var scriptTag = document.createElement('script');
-        scriptTag.src = 'main.dart.js';
-        scriptTag.type = 'application/javascript';
-        document.body.appendChild(scriptTag);
-      };
-      
-      try {
-        window._flutter.loader.load({
-          serviceWorker: {
-            serviceWorkerVersion: serviceWorkerVersion,
-          }
-        });
-      } catch (e) {
-        console.error("错误加载Flutter应用", e);
-      }
-    }
-    
-    window.addEventListener('load', _onLoad);
+    window.addEventListener('load', function() {
+      // 手动加载main.dart.js
+      var scriptTag = document.createElement('script');
+      scriptTag.src = 'main.dart.js';
+      scriptTag.type = 'application/javascript';
+      document.body.appendChild(scriptTag);
+    });
   </script>
 </body>
 </html>
