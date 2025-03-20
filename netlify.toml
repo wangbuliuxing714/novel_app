@@ -1,8 +1,17 @@
 [build]
 publish = "build/web"
-command = "flutter build web --release --web-renderer canvaskit"
+command = "flutter build web --release --web-renderer canvaskit --base-href='/novel_app_web/'"
 
 [[redirects]]
 from = "/*"
 to = "/index.html"
-status = 200 
+status = 200
+force = true
+
+[[headers]]
+for = "/*"
+  [headers.values]
+  Cache-Control = "public, max-age=31536000, immutable"
+  Access-Control-Allow-Origin = "*"
+  Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+  Access-Control-Allow-Headers = "Origin, X-Requested-With, Content-Type, Accept" 
