@@ -102,6 +102,7 @@ class AIService extends GetxService {
     int? maxTokens,
     double repetitionPenalty = 1.3,
     ModelConfig? specificModelConfig,
+    List<Map<String, String>>? messages,
   }) async* {
     final modelConfig = specificModelConfig ?? _apiConfig.getCurrentModel();
     final apiKey = modelConfig.apiKey;
@@ -133,15 +134,25 @@ class AIService extends GetxService {
         
         // 根据不同API格式构建请求体
         if (apiFormat == 'Google API') {
+          // 构建Google API的消息格式
+          List<Map<String, dynamic>> contents = [];
+          
+          if (messages != null && messages.isNotEmpty) {
+            // 如果提供了历史消息，使用这些消息
+            contents = messages.map((msg) => {
+              'role': msg['role'],
+              'parts': [{'text': msg['content']}]
+            }).toList();
+          } else {
+            // 否则使用单一用户消息
+            contents.add({
+              'role': 'user',
+              'parts': [{'text': '$systemPrompt\n\n$userPrompt'}]
+            });
+          }
+          
           body = {
-            'contents': [
-              {
-                'role': 'user',
-                'parts': [
-                  {'text': '$systemPrompt\n\n$userPrompt'}
-                ]
-              }
-            ],
+            'contents': contents,
             'generationConfig': {
               'temperature': temperature,
               'topP': topP,
@@ -173,17 +184,28 @@ class AIService extends GetxService {
             body['stream'] = true;
           }
         } else {
+          // 构建OpenAI格式的消息
+          List<Map<String, String>> apiMessages = [];
+          
+          // 始终添加系统消息
+          apiMessages.add({
+            'role': 'system',
+            'content': systemPrompt,
+          });
+          
+          if (messages != null && messages.isNotEmpty) {
+            // 添加历史消息
+            apiMessages.addAll(messages);
+          } else if (userPrompt.isNotEmpty) {
+            // 如果没有历史消息但有用户消息，添加用户消息
+            apiMessages.add({
+              'role': 'user',
+              'content': userPrompt,
+            });
+          }
+          
           body = {
-            'messages': [
-              {
-                'role': 'system',
-                'content': systemPrompt,
-              },
-              {
-                'role': 'user',
-                'content': userPrompt,
-              }
-            ],
+            'messages': apiMessages,
             'model': model,
             'temperature': temperature,
             'top_p': topP,
@@ -1049,26 +1071,31 @@ $enhancedPrompt
     required String systemPrompt,
     required String userPrompt,
     double temperature = 0.7,
-    double? topP,
+    double topP = 1.0,
     int? maxTokens,
-    double? repetitionPenalty,
-    ModelConfig? specificModelConfig,
+    double repetitionPenalty = 1.3,
+    List<Map<String, String>>? messages,
   }) async {
+    // 构建一个StringBuffer来收集流式结果
     final buffer = StringBuffer();
-    
-    await for (final chunk in generateTextStream(
-      systemPrompt: systemPrompt,
-      userPrompt: userPrompt,
-      temperature: temperature,
-      topP: topP ?? 1.0,
-      maxTokens: maxTokens,
-      repetitionPenalty: repetitionPenalty ?? 1.3,
-      specificModelConfig: specificModelConfig,
-    )) {
-      buffer.write(chunk);
+    try {
+      // 使用流式API，但合并结果
+      await for (final chunk in generateTextStream(
+        systemPrompt: systemPrompt,
+        userPrompt: userPrompt,
+        temperature: temperature,
+        topP: topP,
+        maxTokens: maxTokens,
+        repetitionPenalty: repetitionPenalty,
+        messages: messages,
+      )) {
+        buffer.write(chunk);
+      }
+      return buffer.toString();
+    } catch (e) {
+      print('生成文本失败: $e');
+      rethrow;
     }
-    
-    return buffer.toString();
   }
 
   void dispose() {

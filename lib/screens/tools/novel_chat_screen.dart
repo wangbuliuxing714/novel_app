@@ -17,6 +17,7 @@ class NovelChatController extends GetxController {
   RxBool isGenerating = false.obs;
   RxString currentSessionId = ''.obs;
   Rx<NovelContext?> currentContext = Rx<NovelContext?>(null);
+  RxBool hasNovelContent = false.obs;
   
   final textController = TextEditingController();
   final scrollController = ScrollController();
@@ -44,7 +45,7 @@ class NovelChatController extends GetxController {
     }
   }
 
-  // 从当前小说创建会话
+  // 创建从当前小说创建会话
   Future<void> _createSessionFromCurrentNovel() async {
     final novel = novelController.novels.isNotEmpty 
         ? novelController.novels.first 
@@ -58,21 +59,52 @@ class NovelChatController extends GetxController {
     // 创建会话
     String outline = novel.outline;
     
-    final sessionId = novelGenerator.createNovelSession(
-      title: novel.title,
-      genre: novel.genre,
-      plotOutline: outline,
-      characters: characterCards,
-      worldBuilding: worldBuilding,
-      style: novel.style ?? '',
-      tone: novel.style ?? '',
-    );
+    // 提取小说完整内容
+    String novelContent = '';
+    if (novel.chapters.isNotEmpty) {
+      // 按章节号排序
+      final sortedChapters = List<Chapter>.from(novel.chapters)
+        ..sort((a, b) => a.number.compareTo(b.number));
+      
+      // 合并所有章节内容
+      novelContent = sortedChapters.map((chapter) => 
+        "第${chapter.number}章：${chapter.title}\n\n${chapter.content}"
+      ).join('\n\n');
+      
+      print('提取小说内容：${novel.title}，共${novel.chapters.length}章');
+      hasNovelContent.value = true;
+    } else if (novel.content.isNotEmpty) {
+      // 使用整体内容
+      novelContent = novel.content;
+      print('提取小说内容：${novel.title}，使用整体内容');
+      hasNovelContent.value = true;
+    } else {
+      hasNovelContent.value = false;
+    }
     
-    currentSessionId.value = sessionId;
+    // 检查是否已存在会话ID，若存在则不创建新会话
+    if (currentSessionId.value.isEmpty) {
+      final sessionId = novelGenerator.createNovelSession(
+        title: novel.title,
+        genre: novel.genre,
+        plotOutline: outline,
+        characters: characterCards,
+        worldBuilding: worldBuilding,
+        style: novel.style ?? '',
+        tone: novel.style ?? '',
+        novelContent: novelContent, // 传递小说内容
+      );
+      
+      currentSessionId.value = sessionId;
+    } else {
+      // 更新现有会话的小说内容
+      novelGenerator.updateNovelContent(currentSessionId.value, novelContent);
+    }
+    
     _updateMessages();
     
     // 更新上下文
-    currentContext.value = novelGenerator.getSessionContext(sessionId);
+    currentContext.value = novelGenerator.getSessionContext(currentSessionId.value);
   }
 
   // 更新消息列表
@@ -99,7 +131,7 @@ class NovelChatController extends GetxController {
     try {
       isGenerating.value = true;
       
-      // 添加用户消息
+      // 添加用户消息到UI（实际添加到历史的操作在服务中进行）
       final userMessage = ChatMessage(
         role: 'user',
         content: content,
@@ -235,6 +267,10 @@ ${context.getFormattedContext()}
       final novel = await novelGenerator.exportNovel(currentSessionId.value);
       novelController.saveNovel(novel);
       
+      // 导出后更新会话内容
+      final novelContent = novel.content;
+      novelGenerator.updateNovelContent(currentSessionId.value, novelContent);
+      
       Get.snackbar(
         '导出成功',
         '已将对话导出为小说',
@@ -263,6 +299,56 @@ ${context.getFormattedContext()}
   String getPlotSuggestion() {
     return '请给出一些情节发展的建议，包括可能的转折点和冲突。';
   }
+
+  // 刷新小说内容上下文
+  Future<void> refreshNovelContent() async {
+    if (currentSessionId.value.isEmpty) return;
+    
+    final novel = novelController.novels.isNotEmpty 
+        ? novelController.novels.first 
+        : null;
+        
+    if (novel == null) {
+      Get.snackbar(
+        '刷新失败',
+        '没有找到小说数据',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+    
+    // 提取小说完整内容
+    String novelContent = '';
+    if (novel.chapters.isNotEmpty) {
+      // 按章节号排序
+      final sortedChapters = List<Chapter>.from(novel.chapters)
+        ..sort((a, b) => a.number.compareTo(b.number));
+      
+      // 合并所有章节内容
+      novelContent = sortedChapters.map((chapter) => 
+        "第${chapter.number}章：${chapter.title}\n\n${chapter.content}"
+      ).join('\n\n');
+      
+      print('刷新小说内容：${novel.title}，共${novel.chapters.length}章');
+      hasNovelContent.value = true;
+    } else if (novel.content.isNotEmpty) {
+      // 使用整体内容
+      novelContent = novel.content;
+      print('刷新小说内容：${novel.title}，使用整体内容');
+      hasNovelContent.value = true;
+    } else {
+      hasNovelContent.value = false;
+    }
+    
+    // 更新会话的小说内容
+    novelGenerator.updateNovelContent(currentSessionId.value, novelContent);
+    
+    Get.snackbar(
+      '刷新成功',
+      '已更新小说内容上下文',
+      snackPosition: SnackPosition.BOTTOM,
+    );
+  }
 }
 
 class NovelChatScreen extends StatelessWidget {
@@ -274,8 +360,32 @@ class NovelChatScreen extends StatelessWidget {
     
     return Scaffold(
       appBar: AppBar(
-        title: Text('与小说对话'),
+        title: Obx(() {
+          return Row(
+            children: [
+              Text('与小说对话'),
+              SizedBox(width: 10),
+              if (controller.hasNovelContent.value)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '已加载小说内容',
+                    style: TextStyle(fontSize: 10, color: Colors.white),
+                  ),
+                ),
+            ],
+          );
+        }),
         actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            tooltip: '刷新小说内容',
+            onPressed: () => controller.refreshNovelContent(),
+          ),
           IconButton(
             icon: Icon(Icons.delete_sweep),
             tooltip: '清空聊天',
