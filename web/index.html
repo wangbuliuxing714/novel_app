@@ -42,19 +42,19 @@
     // The value below is injected by flutter build, do not touch.
     var serviceWorkerVersion = null;
     
-    // 设置必要的 buildConfig
+    // 设置必要的 buildConfig，使用HTML渲染器
     window._flutter = window._flutter || {};
     window._flutter.buildConfig = {
       engineRevision: "latest",
       builds: [
         {
-          renderer: "canvaskit",
+          renderer: "html",
           compileTarget: "dart2js"
         }
       ]
     };
     
-    // 拦截和修复fetch请求
+    // 修复fetch请求的CORS问题
     const originalFetch = window.fetch;
     window.fetch = function(resource, init) {
       // 确保init是一个对象
@@ -67,10 +67,14 @@
         init.headers['Content-Type'] = init.headers['Content-Type'] || 'application/json';
       }
       
-      // 添加CORS头
-      init.headers['Access-Control-Allow-Origin'] = '*';
-      init.mode = init.mode || 'cors';
-      init.credentials = init.credentials || 'include';
+      // 不添加CORS头和credentials mode，这样可以避免预检请求问题
+      if (resource.toString().includes('gstatic.com') || 
+          resource.toString().includes('fonts.googleapis.com') || 
+          resource.toString().includes('fonts.gstatic.com')) {
+        init.mode = 'no-cors';
+        init.credentials = 'omit';
+        delete init.headers['Access-Control-Allow-Origin'];
+      }
       
       return originalFetch(resource, init).catch(error => {
         console.warn('Fetch error:', error, 'for resource:', resource);
