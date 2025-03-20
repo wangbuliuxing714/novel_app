@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="AI小说生成器 - 使用AI技术生成精彩小说">
+  <meta http-equiv="Content-Security-Policy" content="default-src * 'self' data: 'unsafe-inline' 'unsafe-eval' blob:; connect-src * 'self'; img-src * 'self' data: blob:; style-src * 'self' 'unsafe-inline'; script-src * 'self' 'unsafe-inline' 'unsafe-eval'; font-src * 'self' data:;">
+  <meta http-equiv="Access-Control-Allow-Origin" content="*">
+  <meta http-equiv="Access-Control-Allow-Methods" content="GET,POST,PUT,DELETE,OPTIONS,PATCH">
+  <meta http-equiv="Access-Control-Allow-Headers" content="Origin, X-Requested-With, Content-Type, Accept, Authorization">
+  <meta http-equiv="Access-Control-Allow-Credentials" content="true">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="AI小说生成器">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>AI小说生成器</title>
+  <link rel="manifest" href="manifest.json">
+
+  <script>
+    // The value below is injected by flutter build, do not touch.
+    const serviceWorkerVersion = "1015622941";
+    
+    // 设置必要的 buildConfig，使用HTML渲染器
+    window._flutter = window._flutter || {};
+    window._flutter.buildConfig = {
+      engineRevision: "latest",
+      builds: [
+        {
+          renderer: "html",
+          compileTarget: "dart2js"
+        }
+      ]
+    };
+    
+    // 网络状态监控
+    let isOnline = navigator.onLine;
+    
+    // 监听网络状态变化
+    window.addEventListener('online', function() {
+      isOnline = true;
+      console.log('网络已连接');
+      document.getElementById('network-status') && (document.getElementById('network-status').style.display = 'none');
+    });
+    
+    window.addEventListener('offline', function() {
+      isOnline = false;
+      console.log('网络已断开');
+      if (document.getElementById('network-status')) {
+        document.getElementById('network-status').style.display = 'block';
+      } else {
+        const netStatus = document.createElement('div');
+        netStatus.id = 'network-status';
+        netStatus.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f44336;color:white;text-align:center;padding:8px;z-index:9999;';
+        netStatus.textContent = '网络连接已断开，请检查您的网络设置';
+        document.body.prepend(netStatus);
+      }
+    });
+    
+    // 增强的fetch函数，带有重试机制和错误处理
+    const originalFetch = window.fetch;
+    window.fetch = function(resource, init) {
+      // 确保init是一个对象
+      init = init || {};
+      // 确保headers是一个对象
+      init.headers = init.headers || {};
+      
+      // 如果不是FormData，添加内容类型
+      if (!(init.body instanceof FormData)) {
+        init.headers['Content-Type'] = init.headers['Content-Type'] || 'application/json';
+      }
+      
+      // 对特定资源使用no-cors模式
+      const url = resource.toString();
+      if (url.includes('gstatic.com') || 
+          url.includes('fonts.googleapis.com') || 
+          url.includes('fonts.gstatic.com') ||
+          url.includes('felo.me') ||
+          url.includes('felo.cc')) {
+        init.mode = 'no-cors';
+        delete init.headers['Content-Type']; // no-cors模式下不需要这个头
+      }
+      
+      // 设置超时时间
+      const timeout = 15000; // 15秒超时
+      
+      // 实现带超时的fetch请求
+      return new Promise((resolve, reject) => {
+        // 超时处理
+        const timeoutId = setTimeout(() => {
+          console.warn('请求超时:', resource);
+          reject(new Error('请求超时'));
+        }, timeout);
+        
+        // 执行原始fetch
+        originalFetch(resource, init)
+          .then(response => {
+            clearTimeout(timeoutId);
+            resolve(response);
+          })
+          .catch(error => {
+            clearTimeout(timeoutId);
+            console.warn('Fetch错误:', error, '资源:', resource);
+            
+            // 检查是否为网络连接问题
+            if (!isOnline) {
+              console.warn('网络连接已断开');
+              // 显示网络错误提示
+              if (!document.getElementById('network-status')) {
+                const netStatus = document.createElement('div');
+                netStatus.id = 'network-status';
+                netStatus.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f44336;color:white;text-align:center;padding:8px;z-index:9999;';
+                netStatus.textContent = '网络连接已断开，请检查您的网络设置';
+                document.body.prepend(netStatus);
+              }
+            }
+            
+            // 对于特定API请求的错误处理
+            if (url.includes('/api/') || url.includes('felo.me') || url.includes('felo.cc')) {
+              // 返回一个友好的错误响应，而不是让整个应用崩溃
+              resolve(new Response(JSON.stringify({
+                success: false, 
+                message: '网络请求失败，请检查网络连接',
+                error: error.message
+              }), {
+                status: 200,
+                headers: {'Content-Type': 'application/json'}
+              }));
+            } else {
+              reject(error); // 对于其他资源，允许错误传播
+            }
+          });
+      });
+    };
+  </script>
+  <!-- This script adds the flutter initialization JS code -->
+  <script src="flutter.js"></script>
+  <style>
+    .loading {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 0;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      -ms-transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%);
+    }
+    
+    .loader {
+      border: 8px solid #f3f3f3;
+      border-radius: 50%;
+      border-top: 8px solid #2196F3;
+      width: 60px;
+      height: 60px;
+      -webkit-animation: spin 1s linear infinite;
+      animation: spin 1s linear infinite;
+    }
+    
+    @-webkit-keyframes spin {
+      0% { -webkit-transform: rotate(0deg); }
+      100% { -webkit-transform: rotate(360deg); }
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    #network-status {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: #f44336;
+      color: white;
+      text-align: center;
+      padding: 8px;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <div id="network-status">网络连接已断开，请检查您的网络设置</div>
+  <div class="loading">
+    <div class="loader"></div>
+  </div>
+  <script>
+    window.addEventListener('load', function() {
+      // 检查初始网络状态
+      if (!navigator.onLine) {
+        document.getElementById('network-status').style.display = 'block';
+      }
+      
+      // 处理所有未捕获的Promise错误
+      window.addEventListener('unhandledrejection', function(event) {
+        console.warn('未捕获的Promise拒绝:', event.reason);
+        event.preventDefault();
+      });
+      
+      // 捕获所有JS错误
+      window.onerror = function(message, source, lineno, colno, error) {
+        console.warn('捕获到JS错误:', message, '位于', source, ':', lineno, ':', colno);
+        return true;
+      };
+      
+      // 增强的main.dart.js加载逻辑
+      function loadMainDartJs(retryCount = 0) {
+        if (retryCount > 3) {
+          console.error('多次尝试加载main.dart.js失败');
+          // 显示错误消息
+          document.querySelector('.loading').innerHTML = '<div style="text-align:center;"><p style="color:red;font-weight:bold;">加载应用失败</p><p>请检查您的网络连接或刷新页面重试</p><button onclick="location.reload()" style="padding:8px 16px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;margin-top:10px;">刷新页面</button></div>';
+          return;
+        }
+        
+        var scriptTag = document.createElement('script');
+        scriptTag.src = 'main.dart.js' + (retryCount > 0 ? '?retry=' + retryCount : '');
+        scriptTag.type = 'application/javascript';
+        
+        scriptTag.onerror = function(error) {
+          console.error('加载main.dart.js失败:', error, '重试次数:', retryCount);
+          // 延迟重试，每次延迟时间增加
+          setTimeout(function() {
+            loadMainDartJs(retryCount + 1);
+          }, 2000 * (retryCount + 1));
+        };
+        
+        document.body.appendChild(scriptTag);
+      }
+      
+      // 开始加载main.dart.js
+      loadMainDartJs();
+    });
+  </script>
+</body>
+</html>
