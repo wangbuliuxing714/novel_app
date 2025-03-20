@@ -1,14 +1,89 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:get/get.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 
 class CacheService extends GetxService {
   static const String CACHE_KEY_PREFIX = 'novel_cache_';
   static const String STYLE_CACHE_KEY = 'style_cache_';
   static const String PATTERN_CACHE_KEY = 'pattern_cache_';
+  static const String CHAT_SESSION_BOX = 'chat_sessions';
+  static const String CHAT_CONTEXT_BOX = 'chat_contexts';
+  static const String NOVEL_SESSIONS_KEY = 'novel_sessions';
+  
   final SharedPreferences _prefs;
+  bool _hiveInitialized = false;
 
   CacheService(this._prefs);
+
+  @override
+  void onInit() {
+    super.onInit();
+    if (!kIsWeb) {
+      _initHive();
+    }
+  }
+
+  // 初始化Hive (仅用于非Web平台)
+  Future<void> _initHive() async {
+    try {
+      if (!_hiveInitialized) {
+        final appDocumentDir = await getApplicationDocumentsDirectory();
+        Hive.init(appDocumentDir.path);
+        await Hive.openBox(CHAT_SESSION_BOX);
+        await Hive.openBox(CHAT_CONTEXT_BOX);
+        _hiveInitialized = true;
+      }
+    } catch (e) {
+      print('初始化Hive失败: $e');
+    }
+  }
+
+  // 保存小说会话数据 (适用于Web和非Web平台)
+  Future<void> saveNovelSessions(String sessionsJson) async {
+    try {
+      await _prefs.setString(NOVEL_SESSIONS_KEY, sessionsJson);
+    } catch (e) {
+      print('保存小说会话失败: $e');
+    }
+  }
+
+  // 获取小说会话数据 (适用于Web和非Web平台)
+  String? getNovelSessions() {
+    try {
+      return _prefs.getString(NOVEL_SESSIONS_KEY);
+    } catch (e) {
+      print('获取小说会话失败: $e');
+      return null;
+    }
+  }
+
+  // 打开聊天会话盒子 (仅用于非Web平台)
+  Future<Box> openChatSessionBox() async {
+    if (kIsWeb) {
+      throw UnsupportedError('Web平台不支持Hive Box操作');
+    }
+    
+    if (!_hiveInitialized) {
+      await _initHive();
+    }
+    return Hive.box(CHAT_SESSION_BOX);
+  }
+
+  // 打开聊天上下文盒子 (仅用于非Web平台)
+  Future<Box> openChatContextBox() async {
+    if (kIsWeb) {
+      throw UnsupportedError('Web平台不支持Hive Box操作');
+    }
+    
+    if (!_hiveInitialized) {
+      await _initHive();
+    }
+    return Hive.box(CHAT_CONTEXT_BOX);
+  }
 
   // 缓存生成的内容
   Future<void> cacheContent(String key, String content) async {
@@ -89,6 +164,24 @@ class CacheService extends GetxService {
       await _prefs.remove(key);
     } catch (e) {
       print('删除缓存失败: $e');
+    }
+  }
+  
+  // 清除所有聊天会话
+  Future<void> clearAllChatSessions() async {
+    try {
+      if (!kIsWeb) {
+        final sessionBox = await openChatSessionBox();
+        final contextBox = await openChatContextBox();
+        
+        await sessionBox.clear();
+        await contextBox.clear();
+      }
+      
+      // 清除SharedPreferences中的会话数据
+      await _prefs.remove(NOVEL_SESSIONS_KEY);
+    } catch (e) {
+      print('清除聊天会话失败: $e');
     }
   }
 } 

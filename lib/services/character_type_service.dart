@@ -51,12 +51,19 @@ class CharacterTypeService extends GetxService {
 
   // 从本地存储加载角色类型
   void _loadFromStorage() {
-    final String? jsonStr = _prefs.getString(_storageKey);
-    if (jsonStr != null) {
-      final List<dynamic> jsonList = json.decode(jsonStr);
-      characterTypes.value = jsonList
-          .map((json) => CharacterType.fromJson(json))
-          .toList();
+    try {
+      final String? jsonStr = _prefs.getString(_storageKey);
+      if (jsonStr != null) {
+        final List<dynamic> jsonList = json.decode(jsonStr);
+        characterTypes.value = jsonList
+            .map((json) => CharacterType.fromJson(json))
+            .toList();
+      }
+    } catch (e) {
+      print('加载角色类型失败: $e');
+      // 如果出现错误，使用默认类型
+      characterTypes.clear();
+      _initDefaultTypes();
     }
   }
 

@@ -127,6 +127,7 @@ class AIService extends GetxService {
     double repetitionPenalty = 1.3,
     ModelConfig? specificModelConfig,
     String? conversationId,
+    List<Map<String, String>>? messages,
   }) async* {
     final modelConfig = specificModelConfig ?? _apiConfig.getCurrentModel();
     final apiKey = modelConfig.apiKey;
@@ -1494,26 +1495,31 @@ ${enhancedPrompt}
     required String systemPrompt,
     required String userPrompt,
     double temperature = 0.7,
-    double? topP,
+    double topP = 1.0,
     int? maxTokens,
-    double? repetitionPenalty,
-    ModelConfig? specificModelConfig,
+    double repetitionPenalty = 1.3,
+    List<Map<String, String>>? messages,
   }) async {
+    // 构建一个StringBuffer来收集流式结果
     final buffer = StringBuffer();
-    
-    await for (final chunk in generateTextStream(
-      systemPrompt: systemPrompt,
-      userPrompt: userPrompt,
-      temperature: temperature,
-      topP: topP ?? 1.0,
-      maxTokens: maxTokens,
-      repetitionPenalty: repetitionPenalty ?? 1.3,
-      specificModelConfig: specificModelConfig,
-    )) {
-      buffer.write(chunk);
+    try {
+      // 使用流式API，但合并结果
+      await for (final chunk in generateTextStream(
+        systemPrompt: systemPrompt,
+        userPrompt: userPrompt,
+        temperature: temperature,
+        topP: topP,
+        maxTokens: maxTokens,
+        repetitionPenalty: repetitionPenalty,
+        messages: messages,
+      )) {
+        buffer.write(chunk);
+      }
+      return buffer.toString();
+    } catch (e) {
+      print('生成文本失败: $e');
+      rethrow;
     }
-    
-    return buffer.toString();
   }
 
   void dispose() {

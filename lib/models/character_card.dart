@@ -3,23 +3,24 @@ import 'package:get/get.dart';
 class CharacterCard {
   final String id;
   final String name;
-  String? gender;
-  String? age;
+  final String characterTypeId;
+  String gender;
+  String age;
   String? race;
   
   // 外貌特征
-  String? bodyDescription;
+  String bodyDescription;
   String? faceFeatures;
   String? clothingStyle;
   String? accessories;
   
   // 性格特征
-  String? personalityTraits;
+  String personalityTraits;
   String? personalityComplexity;
   String? personalityFormation;
   
   // 背景故事
-  String? background;
+  String background;
   String? lifeExperiences;
   String? pastEvents;
   
@@ -41,17 +42,18 @@ class CharacterCard {
   CharacterCard({
     required this.id,
     required this.name,
-    this.gender,
-    this.age,
+    required this.characterTypeId,
+    this.gender = '',
+    this.age = '',
     this.race,
-    this.bodyDescription,
+    this.bodyDescription = '',
     this.faceFeatures,
     this.clothingStyle,
     this.accessories,
-    this.personalityTraits,
+    this.personalityTraits = '',
     this.personalityComplexity,
     this.personalityFormation,
-    this.background,
+    this.background = '',
     this.lifeExperiences,
     this.pastEvents,
     this.shortTermGoals,
@@ -68,19 +70,20 @@ class CharacterCard {
   // 从JSON转换
   factory CharacterCard.fromJson(Map<String, dynamic> json) {
     return CharacterCard(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      gender: json['gender'] as String?,
-      age: json['age'] as String?,
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      characterTypeId: json['characterTypeId'] ?? '',
+      gender: json['gender'] ?? '',
+      age: json['age'] ?? '',
       race: json['race'] as String?,
-      bodyDescription: json['bodyDescription'] as String?,
+      bodyDescription: json['bodyDescription'] ?? '',
       faceFeatures: json['faceFeatures'] as String?,
       clothingStyle: json['clothingStyle'] as String?,
       accessories: json['accessories'] as String?,
-      personalityTraits: json['personalityTraits'] as String?,
+      personalityTraits: json['personalityTraits'] ?? '',
       personalityComplexity: json['personalityComplexity'] as String?,
       personalityFormation: json['personalityFormation'] as String?,
-      background: json['background'] as String?,
+      background: json['background'] ?? '',
       lifeExperiences: json['lifeExperiences'] as String?,
       pastEvents: json['pastEvents'] as String?,
       shortTermGoals: json['shortTermGoals'] as String?,
@@ -100,6 +103,7 @@ class CharacterCard {
     return {
       'id': id,
       'name': name,
+      'characterTypeId': characterTypeId,
       'gender': gender,
       'age': age,
       'race': race,

@@ -1,46 +1,20 @@
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:crypto/crypto.dart';
-import 'dart:convert';
 
 class LicenseService extends GetxService {
-  static const String _licenseKey = 'license_key';
-  final RxBool isLicensed = false.obs;
+  final RxBool isLicensed = true.obs; // 始终返回已授权状态
   
-  // 这里设置有效的许可证密钥列表
-  final List<String> _validLicenses = [
-    'NOVEL-APP-2024-PRO',  // 可以添加更多许可证
-  ];
-
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedKey = prefs.getString(_licenseKey);
-    if (savedKey != null) {
-      isLicensed.value = _validateLicense(savedKey);
-    }
+    // 不做任何验证，直接设置为已授权
+    isLicensed.value = true;
   }
 
-  bool _validateLicense(String key) {
-    // 创建许可证的哈希值进行验证
-    final hash = sha256.convert(utf8.encode(key)).toString();
-    return _validLicenses.any((license) => 
-      sha256.convert(utf8.encode(license)).toString() == hash
-    );
-  }
-
+  // 仅保留方法但返回固定结果
   Future<bool> activateLicense(String key) async {
-    if (_validateLicense(key)) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_licenseKey, key);
-      isLicensed.value = true;
-      return true;
-    }
-    return false;
+    return true; // 始终激活成功
   }
 
   Future<void> deactivateLicense() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_licenseKey);
-    isLicensed.value = false;
+    // 不做任何操作，保持已授权状态
   }
 } 
