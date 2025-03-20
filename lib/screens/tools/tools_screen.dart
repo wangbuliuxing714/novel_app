@@ -30,6 +30,14 @@ class ToolsScreen extends StatelessWidget {
             child: Column(
               children: [
                 ListTile(
+                  leading: const Icon(Icons.chat),
+                  title: const Text('上下文聊天'),
+                  subtitle: const Text('与你的小说进行上下文对话'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () => Get.toNamed('/chat'),
+                ),
+                const Divider(),
+                ListTile(
                   leading: const Icon(Icons.record_voice_over),
                   title: const Text('文本转语音'),
                   subtitle: const Text('将小说转换为语音'),

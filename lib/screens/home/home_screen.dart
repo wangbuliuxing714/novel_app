@@ -370,15 +370,62 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Builder(
-                  builder: (context) => ElevatedButton.icon(
-                    onPressed: controller.generateScriptOutline,
-                    icon: const Icon(Icons.movie),
-                    label: const Text('生成短剧脚本'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.tertiary,
-                      foregroundColor: Theme.of(context).colorScheme.onTertiary,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
+                  builder: (context) => Row(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: controller.generateScriptOutline,
+                        icon: const Icon(Icons.movie),
+                        label: const Text('生成短剧脚本'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).colorScheme.tertiary,
+                          foregroundColor: Theme.of(context).colorScheme.onTertiary,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.tertiary,
+                            width: 1,
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Obx(() => DropdownButton<String>(
+                          value: controller.scriptLanguage.value,
+                          underline: const SizedBox(),
+                          icon: Icon(
+                            Icons.language,
+                            color: Theme.of(context).colorScheme.tertiary,
+                            size: 20,
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'zh',
+                              child: Text('中文'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'en',
+                              child: Text('英文'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ja',
+                              child: Text('日文'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ko',
+                              child: Text('韩文'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              controller.updateScriptLanguage(value);
+                            }
+                          },
+                        )),
+                      ),
+                    ],
                   ),
                 ),
               ],

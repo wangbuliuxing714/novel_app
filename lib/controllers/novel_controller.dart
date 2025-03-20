@@ -40,6 +40,9 @@ class NovelController extends GetxController {
   // 添加目标读者变量
   final targetReader = '男性向'.obs;
   
+  // 添加短剧脚本语言支持
+  final scriptLanguage = 'zh'.obs; // 默认为中文
+  
   // 新增角色选择相关的变量
   final selectedCharacterTypes = <CharacterType>[].obs;
   final Map<String, CharacterCard> selectedCharacterCards = <String, CharacterCard>{}.obs;
@@ -154,6 +157,8 @@ class NovelController extends GetxController {
     try {
       final novelKey = 'novel_${novel.title}';
       await _novelsBox.put(novelKey, novel);
+      // 确保立即刷新数据到磁盘
+      await _novelsBox.flush();
       print('保存小说成功: ${novel.title}');
     } catch (e) {
       print('保存到Hive失败: $e');
@@ -163,20 +168,55 @@ class NovelController extends GetxController {
 
   void _loadGeneratedChapters() {
     try {
+      // 尝试加载简单键 'chapters' 下的章节
       final savedChapters = _chaptersBox.get('chapters');
-      if (savedChapters != null) {
-        if (savedChapters is List) {
-          _generatedChapters.value = savedChapters
-              .map((chapterData) => chapterData is Chapter 
-                  ? chapterData 
-                  : Chapter.fromJson(Map<String, dynamic>.from(chapterData)))
-              .toList();
+      if (savedChapters != null && savedChapters is List) {
+        final chapters = savedChapters
+          .map((chapterData) => chapterData is Chapter 
+              ? chapterData 
+              : Chapter.fromJson(Map<String, dynamic>.from(chapterData)))
+          .toList();
+        _generatedChapters.addAll(chapters);
+      }
+      
+      // 加载所有其他章节（使用复合键保存的）
+      final chapterKeys = _chaptersBox.keys.where(
+        (key) => key.toString() != 'chapters' && key.toString().contains('_')
+      );
+      
+      for (final key in chapterKeys) {
+        final chapterData = _chaptersBox.get(key);
+        if (chapterData != null) {
+          Chapter chapter;
+          if (chapterData is Chapter) {
+            chapter = chapterData;
+          } else if (chapterData is Map) {
+            chapter = Chapter.fromJson(Map<String, dynamic>.from(chapterData));
+          } else {
+            print('不支持的章节数据类型: ${chapterData.runtimeType}');
+            continue;
+          }
+          
+          // 检查是否已经加载了相同的章节
+          if (!_generatedChapters.any((c) => 
+              c.number == chapter.number && c.title == chapter.title)) {
+            _generatedChapters.add(chapter);
+          }
         }
       }
+      
+      // 确保章节按号码排序
+      _sortChapters();
+      
+      print('加载了 ${_generatedChapters.length} 个章节');
     } catch (e) {
       print('加载章节失败: $e');
       _generatedChapters.clear();
     }
+  }
+  
+  void _sortChapters() {
+    _generatedChapters.sort((a, b) => a.number.compareTo(b.number));
   }
 
   Future<void> saveChapter(String novelTitle, Chapter chapter) async {
@@ -217,6 +257,11 @@ class NovelController extends GetxController {
 
       // 保存到本地存储
       await _saveToHive(novel);
+      
+      // 单独保存章节，确保章节也能单独检索
+      final chapterKey = '${novel.id}_${chapter.number}';
+      await _chaptersBox.put(chapterKey, chapter);
+      await _chaptersBox.flush(); // 确保章节数据立即写入磁盘
       
       // 通知UI更新
       update();
@@ -640,6 +685,7 @@ class NovelController extends GetxController {
 
   void deleteChapter(int chapterNumber) {
     _generatedChapters.removeWhere((chapter) => chapter.number == chapterNumber);
+    
     if (novels.isNotEmpty) {
       var novel = novels.firstWhere(
         (n) => n.title == title.value,
@@ -655,27 +701,35 @@ class NovelController extends GetxController {
       
       novel.chapters.removeWhere((chapter) => chapter.number == chapterNumber);
       _saveToHive(novel);
+      
+      // 同时删除章节数据
+      final chapterKeyPrefix = '${novel.id}_$chapterNumber';
+      for (final key in _chaptersBox.keys.where((k) => k.toString().startsWith(chapterKeyPrefix))) {
+        _chaptersBox.delete(key);
+      }
+      _chaptersBox.flush(); // 确保更改立即写入磁盘
     }
   }
 
   void clearAllChapters() {
     _generatedChapters.clear();
+    
+    // 清空章节数据
     if (novels.isNotEmpty) {
-      var novel = novels.firstWhere(
-        (n) => n.title == title.value,
-        orElse: () => Novel(
-          title: title.value,
-          genre: selectedGenres.join(','),
-          outline: '',
-          content: '',
-          chapters: [],
-          createdAt: DateTime.now(),
-        ),
-      );
-      
-      novel.chapters.clear();
-      novel.content = '';
-      _saveToHive(novel);
+      // 使用 tryWhere 避免返回 null
+      var novelIndex = novels.indexWhere((n) => n.title == title.value);
+      if (novelIndex >= 0) {
+        var novel = novels[novelIndex];
+        novel.chapters.clear();
+        _saveToHive(novel);
+        
+        // 删除所有相关章节
+        final novelIdPrefix = '${novel.id}_';
+        for (final key in _chaptersBox.keys.where((k) => k.toString().startsWith(novelIdPrefix))) {
+          _chaptersBox.delete(key);
+        }
+        _chaptersBox.flush(); // 确保更改立即写入磁盘
+      }
     }
   }
 
@@ -689,10 +743,6 @@ class NovelController extends GetxController {
 
   Chapter? getChapter(int chapterNumber) {
     return _generatedChapters.firstWhereOrNull((chapter) => chapter.number == chapterNumber);
-  }
-
-  void _sortChapters() {
-    _generatedChapters.sort((a, b) => a.number.compareTo(b.number));
   }
 
   Future<String> exportChapters(String selectedFormat, List<Chapter> selectedChapters) async {
@@ -1106,6 +1156,12 @@ class NovelController extends GetxController {
     }
   }
 
+  // 更新脚本语言
+  void updateScriptLanguage(String language) {
+    scriptLanguage.value = language;
+    print('短剧脚本语言已更新为: $language');
+  }
+
   // 修改重置生成状态的方法
   void _resetGenerationState() {
     isGenerating.value = false;
@@ -1144,6 +1200,7 @@ class NovelController extends GetxController {
         selectedCharacterTypes: selectedCharacterTypes,
         selectedCharacterCards: selectedCharacterCards,
         style: style.value,
+        language: scriptLanguage.value,
         updateStatus: (status) => generationStatus.value = status,
         updateProgress: (progress) => generationProgress.value = progress,
         updateRealtimeOutput: (output) => realtimeOutput.value = output,
@@ -1160,8 +1217,17 @@ class NovelController extends GetxController {
       );
 
       // 保存短剧
-      _novelsBox.add(novel);
+      final novelKey = _novelsBox.add(novel);
       novels.add(novel);
+      
+      // 也用标题作为键保存一次，增加数据冗余，确保能找到
+      final titleKey = 'novel_${novel.title}';
+      await _novelsBox.put(titleKey, novel);
+      
+      // 确保立即刷新数据到磁盘
+      await _novelsBox.flush();
+      
+      print('大纲生成完成并保存：${novel.title}，ID: $novelKey');
 
       // 设置当前大纲
       currentOutline.value = NovelOutline(
@@ -1241,6 +1307,7 @@ class NovelController extends GetxController {
           previousEpisodes: chapters,
           style: style.value,
           targetViewers: targetReader.value,
+          language: scriptLanguage.value,
           updateRealtimeOutput: (output) => realtimeOutput.value = output,
           updateStatus: (status) => generationStatus.value = status,
           updateProgress: (progress) => generationProgress.value = progress,
@@ -1265,6 +1332,46 @@ class NovelController extends GetxController {
         await _chaptersBox.flush();
         
         print('保存剧集：${novel.title} - 第$i集，键名：$chapterKey');
+        
+        // 每生成一集就更新整个小说并保存
+        Novel updatedNovel = novel.copyWith(
+          chapters: List.from(chapters),
+        );
+        
+        // 更新小说内容（合并所有剧集）
+        final buffer = StringBuffer();
+        for (final chapter in chapters) {
+          if (chapter.number > 0) { // 跳过大纲
+            buffer.writeln('第${chapter.number}集：${chapter.title}');
+            buffer.writeln();
+            buffer.writeln(chapter.content);
+            buffer.writeln();
+          }
+        }
+        updatedNovel = updatedNovel.copyWith(content: buffer.toString());
+        
+        // 保存更新后的小说到Hive
+        int novelIndex = novels.indexWhere((n) => n.id == novel.id);
+        if (novelIndex >= 0) {
+          await _novelsBox.put(novelIndex, updatedNovel);
+          
+          // 也用标题作为键保存一次，增加数据冗余，确保能找到
+          final titleKey = 'novel_${novel.title}';
+          await _novelsBox.put(titleKey, updatedNovel);
+          
+          // 确保立即刷新数据到磁盘
+          await _novelsBox.flush();
+          
+          // 将novel引用指向更新后的小说，确保后续操作使用最新数据
+          novel = updatedNovel;
+          
+          // 更新novels列表中的对应项
+          novels[novelIndex] = novel;
+          
+          print('已保存更新的小说：${novel.title}，当前包含 ${novel.chapters.length} 个章节');
+        } else {
+          print('警告：找不到要更新的小说，ID: ${novel.id}');
+        }
       }
 
       // 更新小说内容和章节
@@ -1290,13 +1397,6 @@ class NovelController extends GetxController {
       // 确保立即刷新数据到磁盘
       await _novelsBox.flush();
       
-      // 也用标题作为键保存一次，增加数据冗余，确保能找到
-      final titleKey = 'novel_${novel.title}';
-      await _novelsBox.put(titleKey, novel);
-      await _novelsBox.flush();
-      
-      print('保存小说：${novel.title}，包含 ${novel.chapters.length} 个章节');
-
       generationStatus.value = '短剧脚本生成完成！';
       Get.snackbar('成功', '短剧脚本生成完成并保存');
       

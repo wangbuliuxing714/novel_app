@@ -638,14 +638,14 @@ class AIService extends GetxService {
     }
   }
 
-  Future<String> generateChapterContent(String prompt) async {
+  Future<String> generateChapterContent(String systemPrompt) async {
     final completer = Completer<String>();
     final buffer = StringBuffer();
     
     try {
       await for (final chunk in generateTextStream(
-        systemPrompt: prompt,
-        userPrompt: "请根据以上要求生成章节内容",
+        systemPrompt: systemPrompt,
+        userPrompt: "", // 内容都在系统提示词中
         temperature: 0.7,
         maxTokens: 4000,
       )) {
@@ -704,6 +704,125 @@ class AIService extends GetxService {
       completer.complete(buffer.toString());
     } catch (e) {
       completer.completeError('生成短篇小说内容失败: $e');
+    }
+    
+    return completer.future;
+  }
+
+  // 新增: 生成聊天回复的方法
+  Future<String> generateChatResponse({
+    required String systemPrompt,
+    required List<Map<String, String>> messages,
+    double temperature = 0.7,
+    int maxTokens = 1000,
+  }) async {
+    final completer = Completer<String>();
+    
+    try {
+      // 使用 OpenAI 格式的消息列表
+      final formattedMessages = [
+        {"role": "system", "content": systemPrompt},
+        ...messages,
+      ];
+      
+      final config = _apiConfig.getCurrentModel();
+      
+      // 构建请求体
+      final Map<String, dynamic> requestBody;
+      final headers = <String, String>{
+        'Content-Type': 'application/json; charset=utf-8',
+        'Accept': 'application/json; charset=utf-8',
+      };
+      
+      if (config.apiFormat == 'Google API') {
+        requestBody = {
+          'contents': [
+            {
+              'role': 'user',
+              'parts': [{'text': systemPrompt}]
+            },
+            ...messages.map((msg) => {
+              'role': msg['role'],
+              'parts': [{'text': msg['content']}]
+            }).toList(),
+          ],
+          'generationConfig': {
+            'temperature': temperature,
+            'maxOutputTokens': maxTokens,
+            'topP': config.topP,
+          },
+        };
+        headers['x-goog-api-key'] = config.apiKey;
+      } else {
+        requestBody = {
+          'model': config.model,
+          'messages': formattedMessages,
+          'temperature': temperature,
+          'max_tokens': maxTokens,
+          'stream': false,
+        };
+        
+        if (config.appId.isNotEmpty) {
+          headers['X-Bce-Authorization'] = config.apiKey;
+          headers['X-Appid'] = config.appId;
+        } else {
+          headers['Authorization'] = 'Bearer ${config.apiKey}';
+        }
+      }
+      
+      // 发送请求并确保使用UTF-8解码
+      final request = http.Request('POST', Uri.parse('${config.apiUrl}${config.apiPath}'));
+      request.headers.addAll(headers);
+      request.body = jsonEncode(requestBody);
+      
+      final streamedResponse = await _client.send(request);
+      
+      // 使用UTF-8解码器处理响应流
+      final responseText = await streamedResponse.stream
+          .transform(utf8.decoder)
+          .join();
+      
+      if (streamedResponse.statusCode != 200) {
+        throw Exception('API请求失败: $responseText');
+      }
+      
+      final responseJson = jsonDecode(responseText);
+      String content = '';
+      
+      // 解析不同API的返回格式
+      if (config.apiFormat == 'Google API') {
+        content = responseJson['candidates'][0]['content']['parts'][0]['text'];
+      } else {
+        // 兼容各种OpenAI格式API
+        try {
+          content = responseJson['choices'][0]['message']['content'];
+        } catch (e) {
+          try {
+            content = responseJson['choices'][0]['delta']['content'];
+          } catch (e) {
+            try {
+              content = responseJson['choices'][0]['text'];
+            } catch (e) {
+              content = responseJson.toString();
+            }
+          }
+        }
+      }
+      
+      // 确保内容是有效的UTF-8字符串
+      if (content.isNotEmpty) {
+        try {
+          // 尝试清理任何可能的无效字符
+          final bytes = utf8.encode(content);
+          content = utf8.decode(bytes);
+        } catch (e) {
+          print('内容编码处理失败: $e');
+        }
+      }
+      
+      completer.complete(content);
+    } catch (e) {
+      completer.completeError('生成聊天回复失败: $e');
     }
     
     return completer.future;

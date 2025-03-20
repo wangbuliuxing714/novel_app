@@ -36,6 +36,11 @@ import 'package:novel_app/services/prompt_package_service.dart';
 import 'package:novel_app/controllers/prompt_package_controller.dart';
 import 'package:novel_app/services/character_generator_service.dart';
 import 'package:novel_app/services/background_generator_service.dart';
+import 'package:novel_app/services/lang_chain_service.dart';
+import 'package:novel_app/services/chat_context_service.dart';
+import 'package:novel_app/controllers/chat_controller.dart';
+import 'package:novel_app/screens/chat/chat_list_screen.dart';
+import 'package:novel_app/screens/chat/chat_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,8 +68,9 @@ void main() async {
   Get.put(ThemeController());
   
   // 初始化服务
-  final apiConfig = Get.put(ApiConfigController());
-  final aiService = Get.put(AIService(apiConfig));
+  final apiConfigController = Get.put(ApiConfigController());
+  final aiService = Get.put(AIService(apiConfigController));
+  final langChainService = Get.put(LangChainService(apiConfigController));
   final cacheService = Get.put(CacheService(prefs));
   
   // 初始化角色相关服务
@@ -79,8 +85,8 @@ void main() async {
   final promptPackageController = Get.put(PromptPackageController());
   
   // 先初始化基础服务
-  Get.put(NovelGeneratorService(aiService, cacheService, apiConfig));
-  Get.put(ContentReviewService(aiService, apiConfig, cacheService));
+  final novelGeneratorService = Get.put(NovelGeneratorService(aiService, cacheService, apiConfigController));
+  Get.put(ContentReviewService(aiService, apiConfigController, cacheService));
   
   // 然后初始化控制器
   Get.put(NovelController());
@@ -122,6 +128,12 @@ void main() async {
     await licenseService.init();
   }
 
+  // 初始化聊天上下文服务
+  await Get.putAsync(() => ChatContextService().init());
+  
+  // 初始化聊天控制器
+  Get.put(ChatController());
+
   runApp(const MyApp());
 }
 
@@ -159,6 +171,8 @@ class MyApp extends StatelessWidget {
           name: '/novel_continue',
           page: () => NovelContinueScreen(novel: Get.arguments),
         ),
+        GetPage(name: '/chat', page: () => ChatListScreen()),
+        GetPage(name: '/chat_detail', page: () => ChatScreen()),
       ],
     );
   }
