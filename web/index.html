@@ -26,6 +26,7 @@
 
   <!-- iOS meta tags & icons -->
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="AI小说生成器">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
@@ -38,10 +39,10 @@
 
   <script>
     // The value below is injected by flutter build, do not touch.
-    const serviceWorkerVersion = null;
+    var serviceWorkerVersion = null;
   </script>
   <!-- This script adds the flutter initialization JS code -->
-  <script src="flutter.js" defer></script>
+  <script src="flutter.js"></script>
   <style>
     .loading {
       display: flex;
@@ -81,19 +82,30 @@
     <div class="loader"></div>
   </div>
   <script>
-    window.addEventListener('load', function(ev) {
+    function _onLoad() {
       // Download main.dart.js
-      Flutter.loader.load({
-        serviceWorker: {
-          serviceWorkerVersion: serviceWorkerVersion,
-        },
-        onEntrypointLoaded: function(engineInitializer) {
-          engineInitializer.initializeEngine().then(function(appRunner) {
-            appRunner.runApp();
-          });
-        }
-      });
-    });
+      window._flutter = window._flutter || {};
+      window._flutter.loader = window._flutter.loader || {};
+      window._flutter.loader.load = window._flutter.loader.load || function(config) {
+        // 手动加载main.dart.js
+        var scriptTag = document.createElement('script');
+        scriptTag.src = 'main.dart.js';
+        scriptTag.type = 'application/javascript';
+        document.body.appendChild(scriptTag);
+      };
+      
+      try {
+        window._flutter.loader.load({
+          serviceWorker: {
+            serviceWorkerVersion: serviceWorkerVersion,
+          }
+        });
+      } catch (e) {
+        console.error("错误加载Flutter应用", e);
+      }
+    }
+    
+    window.addEventListener('load', _onLoad);
   </script>
 </body>
 </html>
