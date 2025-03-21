@@ -3,29 +3,144 @@
 <head>
   <meta charset="utf-8">
   <title>AI小说生成器 - 页面重定向</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f5f5;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      text-align: center;
+    }
+    .container {
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      max-width: 500px;
+      width: 90%;
+    }
+    h1 {
+      color: #2196F3;
+      margin-top: 0;
+    }
+    p {
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .btn {
+      display: inline-block;
+      background-color: #2196F3;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: bold;
+      margin: 10px 5px;
+      cursor: pointer;
+      border: none;
+    }
+    .loader {
+      border: 5px solid #f3f3f3;
+      border-radius: 50%;
+      border-top: 5px solid #2196F3;
+      width: 40px;
+      height: 40px;
+      margin: 20px auto;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    #network-status {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: #f44336;
+      color: white;
+      text-align: center;
+      padding: 8px;
+      z-index: 9999;
+    }
+  </style>
   <script>
-    // 从URL中获取路径
-    var segmentCount = 1;
-    var location = window.location;
-    var baseUrl = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
-    var path = location.pathname.split('/').slice(0, segmentCount + 1).join('/') + '/';
-    var redirectUrl = baseUrl + path + '?p=' + location.pathname.slice(path.length);
-    
-    // 处理查询参数
-    if (location.search) {
-      redirectUrl += location.search + '&' + location.hash;
-    } else {
-      redirectUrl += '?' + location.hash;
+    // 检查网络状态
+    function checkNetwork() {
+      if (!navigator.onLine) {
+        document.getElementById('network-status').style.display = 'block';
+        document.getElementById('redirect-msg').style.display = 'none';
+        document.getElementById('offline-msg').style.display = 'block';
+        return false;
+      }
+      return true;
     }
     
-    // 重定向到主页
-    sessionStorage.setItem('redirect', location.pathname + location.search + location.hash);
-    window.location.href = baseUrl + path;
+    // 监听网络状态变化
+    window.addEventListener('online', function() {
+      document.getElementById('network-status').style.display = 'none';
+      document.getElementById('redirect-msg').style.display = 'block';
+      document.getElementById('offline-msg').style.display = 'none';
+      performRedirect();
+    });
+    
+    window.addEventListener('offline', function() {
+      document.getElementById('network-status').style.display = 'block';
+      document.getElementById('redirect-msg').style.display = 'none';
+      document.getElementById('offline-msg').style.display = 'block';
+    });
+    
+    // 执行重定向
+    function performRedirect() {
+      if (!checkNetwork()) return;
+      
+      // 显示加载指示器
+      document.getElementById('loader').style.display = 'block';
+      
+      // 从URL中获取路径
+      var segmentCount = 1;
+      var location = window.location;
+      var baseUrl = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
+      var path = location.pathname.split('/').slice(0, segmentCount + 1).join('/') + '/';
+      var redirectUrl = baseUrl + path;
+      
+      // 保存当前路径以便主页面可以使用
+      sessionStorage.setItem('redirect', location.pathname + location.search + location.hash);
+      
+      // 设置3秒后自动重定向
+      setTimeout(function() {
+        window.location.href = redirectUrl;
+      }, 3000);
+    }
+    
+    // 页面加载时
+    window.onload = function() {
+      performRedirect();
+    };
   </script>
-  <meta http-equiv="refresh" content="0;URL='/novel_app_web/'">
 </head>
 <body>
-  <h1>页面重定向中...</h1>
-  <p>如果页面没有自动跳转，<a href="/novel_app_web/">点击这里</a>回到主页。</p>
+  <div id="network-status">网络连接已断开，请检查您的网络设置</div>
+  <div class="container">
+    <h1>AI小说生成器</h1>
+    
+    <div id="redirect-msg">
+      <p>页面不存在或已被移动。我们正在将您重定向到主页...</p>
+      <div id="loader" class="loader"></div>
+      <p>如果页面没有自动跳转，<a href="/" class="btn">点击这里</a>回到主页。</p>
+    </div>
+    
+    <div id="offline-msg" style="display:none;">
+      <p>您似乎处于离线状态。请检查您的网络连接后再试。</p>
+      <button class="btn" onclick="window.location.reload()">重新加载</button>
+    </div>
+  </div>
 </body>
 </html> 
