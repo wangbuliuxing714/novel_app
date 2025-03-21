@@ -1,6 +1,6 @@
 [build]
 publish = "build/web"
-command = "flutter build web --release --web-renderer canvaskit --base-href='/novel_app_web/'"
+command = "flutter build web --release --web-renderer html --base-href='./'"
 
 [[redirects]]
 from = "/*"

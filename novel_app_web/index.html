@@ -40,7 +40,10 @@
 
   <script>
     // The value below is injected by flutter build, do not touch.
-    const serviceWorkerVersion = "1015622941";
+    const serviceWorkerVersion = "2064969925";
+    
+    // 强制使用HTML渲染器
+    window.flutterWebRenderer = "html";
     
     // 设置必要的 buildConfig，使用HTML渲染器
     window._flutter = window._flutter || {};
@@ -51,7 +54,11 @@
           renderer: "html",
           compileTarget: "dart2js"
         }
-      ]
+      ],
+      initializeEngine: true,
+      // 添加禁用CanvasKit的选项
+      canvasKitBaseUrl: null,
+      useColorEmoji: false
     };
     
     // 网络状态监控
@@ -99,7 +106,20 @@
           url.includes('felo.me') ||
           url.includes('felo.cc')) {
         init.mode = 'no-cors';
-        delete init.headers['Content-Type']; // no-cors模式下不需要这个头
+        // 对于跨域请求，不要自定义header
+        delete init.headers['Content-Type']; 
+        delete init.headers['access-control-allow-origin'];
+      }
+      
+      // 对于CanvasKit资源，使用HTML渲染器时跳过请求
+      if (url.includes('canvaskit.wasm') || url.includes('canvaskit.js')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          success: true,
+          message: 'HTML渲染器不需要CanvasKit'
+        }), {
+          status: 200,
+          headers: {'Content-Type': 'application/json'}
+        }));
       }
       
       // 设置超时时间
@@ -110,7 +130,18 @@
         // 超时处理
         const timeoutId = setTimeout(() => {
           console.warn('请求超时:', resource);
-          reject(new Error('请求超时'));
+          // 对于重要资源，返回友好的错误响应
+          if (url.includes('/api/') || url.includes('felo.me') || url.includes('felo.cc')) {
+            resolve(new Response(JSON.stringify({
+              success: false, 
+              message: '请求超时，请稍后再试',
+            }), {
+              status: 200,
+              headers: {'Content-Type': 'application/json'}
+            }));
+          } else {
+            reject(new Error('请求超时'));
+          }
         }, timeout);
         
         // 执行原始fetch
@@ -227,7 +258,7 @@
         return true;
       };
       
-      // 增强的main.dart.js加载逻辑
+      // 直接加载main.dart.js，不使用路径计算
       function loadMainDartJs(retryCount = 0) {
         if (retryCount > 3) {
           console.error('多次尝试加载main.dart.js失败');
@@ -237,7 +268,7 @@
         }
         
         var scriptTag = document.createElement('script');
-        scriptTag.src = 'main.dart.js' + (retryCount > 0 ? '?retry=' + retryCount : '');
+        scriptTag.src = 'main.dart.js' + (retryCount > 0 ? `?retry=${retryCount}` : '');
         scriptTag.type = 'application/javascript';
         
         scriptTag.onerror = function(error) {
