@@ -42,6 +42,26 @@
     // The value below is injected by flutter build, do not touch.
     var serviceWorkerVersion = null;
     
+    // 动态设置base href，确保资源正确加载
+    (function() {
+      // 检查当前base href是否包含占位符
+      const baseElement = document.querySelector('base');
+      if (baseElement && (baseElement.getAttribute('href') === '$FLUTTER_BASE_HREF' || baseElement.getAttribute('href') === '/')) {
+        // 设置为当前路径
+        let basePath = document.location.pathname;
+        // 确保路径以/结尾
+        if (!basePath.endsWith('/')) {
+          basePath = basePath.substring(0, basePath.lastIndexOf('/') + 1);
+        }
+        if (basePath === '/') {
+          baseElement.setAttribute('href', './');
+        } else {
+          baseElement.setAttribute('href', basePath);
+        }
+        console.log('动态设置base href为:', baseElement.getAttribute('href'));
+      }
+    })();
+    
     // 强制使用HTML渲染器
     window.flutterWebRenderer = "html";
     
@@ -246,6 +266,28 @@
         document.getElementById('network-status').style.display = 'block';
       }
       
+      // 清除可能的缓存问题
+      if ('caches' in window) {
+        caches.keys().then(function(cacheNames) {
+          cacheNames.forEach(function(cacheName) {
+            if (cacheName.includes('flutter') || cacheName.includes('dart')) {
+              console.log('清除缓存:', cacheName);
+              caches.delete(cacheName);
+            }
+          });
+        });
+      }
+      
+      // 强制刷新Service Worker
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            console.log('卸载Service Worker');
+            registration.unregister();
+          }
+        });
+      }
+      
       // 处理所有未捕获的Promise错误
       window.addEventListener('unhandledrejection', function(event) {
         console.warn('未捕获的Promise拒绝:', event.reason);
@@ -267,16 +309,44 @@
           return;
         }
         
+        // 智能解析路径
+        let jsPath = '';
+        // 尝试多种可能的路径
+        const possiblePaths = ['main.dart.js', './main.dart.js', '/main.dart.js', '/novel_app_web/main.dart.js'];
+        
+        // 创建<script>标签
         var scriptTag = document.createElement('script');
-        scriptTag.src = 'main.dart.js' + (retryCount > 0 ? `?retry=${retryCount}` : '');
         scriptTag.type = 'application/javascript';
         
+        // 尝试检测当前路径
+        const currentPath = location.pathname;
+        if (currentPath.includes('/novel_app_web/')) {
+          jsPath = '/novel_app_web/main.dart.js';
+        } else if (currentPath === '/' || currentPath.endsWith('/index.html')) {
+          jsPath = './main.dart.js';
+        } else {
+          // 默认路径
+          jsPath = 'main.dart.js';
+        }
+        
+        // 添加重试参数
+        jsPath = jsPath + (retryCount > 0 ? `?retry=${retryCount}` : '');
+        scriptTag.src = jsPath;
+        
+        console.log('尝试加载路径:', jsPath);
+        
         scriptTag.onerror = function(error) {
-          console.error('加载main.dart.js失败:', error, '重试次数:', retryCount);
-          // 延迟重试，每次延迟时间增加
-          setTimeout(function() {
-            loadMainDartJs(retryCount + 1);
-          }, 2000 * (retryCount + 1));
+          console.error('加载main.dart.js失败:', error, '重试次数:', retryCount, '路径:', jsPath);
+          
+          // 如果失败，尝试下一个可能的路径
+          if (retryCount < possiblePaths.length) {
+            setTimeout(function() {
+              loadMainDartJs(retryCount + 1);
+            }, 1000);
+          } else {
+            // 所有路径都失败，显示错误
+            document.querySelector('.loading').innerHTML = '<div style="text-align:center;"><p style="color:red;font-weight:bold;">加载应用失败</p><p>请检查您的网络连接或刷新页面重试</p><button onclick="location.reload()" style="padding:8px 16px;background:#2196F3;color:white;border:none;border-radius:4px;cursor:pointer;margin-top:10px;">刷新页面</button></div>';
+          }
         };
         
         document.body.appendChild(scriptTag);
