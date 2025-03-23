@@ -8,6 +8,7 @@ import 'package:novel_app/screens/character_generator_screen.dart';
 import 'package:novel_app/screens/background_generator_screen.dart';
 import 'package:novel_app/screens/knowledge_base_screen.dart';
 import 'package:novel_app/screens/tools/novel_chat_screen.dart';
+import 'package:novel_app/screens/debug/conversation_debug_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
@@ -68,6 +69,14 @@ class ToolsScreen extends StatelessWidget {
                   subtitle: const Text('管理创作参考资料和知识'),
                   trailing: const Icon(Icons.arrow_forward_ios),
                   onTap: () => Get.to(() => KnowledgeBaseScreen()),
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.history),
+                  title: const Text('会话历史调试'),
+                  subtitle: const Text('查看和管理AI对话历史记录'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () => Get.to(() => const ConversationDebugScreen()),
                 ),
               ],
             ),
