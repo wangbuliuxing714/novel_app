@@ -87,7 +87,7 @@ $content''';
       await for (final chunk in _aiService.generateTextStream(
         systemPrompt: systemPrompt,
         userPrompt: userPrompt,
-        maxTokens: 8100,
+        maxTokens: 7500,
         temperature: 0.7,
       )) {
         buffer.write(chunk);
@@ -114,7 +114,7 @@ $reviewedContent''';
           systemPrompt: '''你是一位专业的文学编辑，专门处理文本中的重复内容问题。
 你的任务是彻底删除所有重复的段落，并确保每个段落都是独特的。''',
           userPrompt: secondRoundPrompt,
-          maxTokens: 8100,
+          maxTokens: 7500,
           temperature: 0.8,
         )) {
           secondBuffer.write(chunk);
@@ -197,7 +197,7 @@ ${userRequirements != null ? '\n【用户特殊要求】\n$userRequirements' : '
       await for (final chunk in _aiService.generateTextStream(
         systemPrompt: systemPrompt,
         userPrompt: userPrompt,
-        maxTokens: 8000,
+        maxTokens: 7500,
         temperature: 0.7,
       )) {
         buffer.write(chunk);

@@ -398,7 +398,7 @@ class AIService extends GetxService {
             'model': model,
             'temperature': temperature,
             'top_p': topP,
-            'max_tokens': maxTokens,
+            'max_tokens': maxTokens != null ? (maxTokens > 8192 ? 8192 : maxTokens) : 4000,
             'presence_penalty': 0,
             'frequency_penalty': repetitionPenalty,
             'stream': true,
@@ -645,7 +645,7 @@ class AIService extends GetxService {
           ],
           'parameters': {
             'temperature': temperature,
-            'max_tokens': maxTokens,
+            'max_tokens': maxTokens > 8192 ? 8192 : maxTokens,
             'top_p': config.topP,
           },
           'stream': true,
@@ -809,7 +809,7 @@ class AIService extends GetxService {
           ],
           'stream': true,
           'temperature': temperature,
-          'max_tokens': maxTokens,
+          'max_tokens': maxTokens > 8192 ? 8192 : maxTokens,
           'top_p': config.topP,
         }),
       );
@@ -1153,7 +1153,7 @@ $basePrompt
         systemPrompt: finalPrompt + "\n\n创作要求：请用非常简洁的描述方式描述剧情，冲突部分可以详细描写，快节奏，多对话形式，以小见大，人物对话格式：'xxxxx'某某说道。严禁使用任何形式的小标题、序号或章节编号。严禁使用情节点、转折点、高潮点等标题或分段标记。严禁使用总结性语言，如\"总之\"、\"总的来说\"、\"简而言之\"等。严禁添加旁白或解说，严禁添加\"作者注\"、\"编者按\"等内容。直接用流畅的叙述展开故事，只关注推动情节发展的内容。内容字数必须不少于3000字，字数一定要达到3000字，确保内容充分展开。",
         userPrompt: "请根据以上要求创作一篇高质量的短篇小说内容",
         temperature: 0.78, // 提高创造性
-        maxTokens: 8000, // 最大token上限
+        maxTokens: 7500, // 最大token上限
         repetitionPenalty: 1.0, // 不进行重复惩罚，允许更自然的文学表达
         topP: 0.95, // 提高多样性
       )) {

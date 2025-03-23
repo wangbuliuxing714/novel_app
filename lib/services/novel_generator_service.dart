@@ -695,18 +695,9 @@ ${targetReaderPrompt.isNotEmpty ? "目标读者：\n" + targetReaderPrompt + "\n
   }
 
   // 根据章节位置返回不同的最大token数，确保足够容纳前文信息
+  // 不再使用动态token分配，统一使用7000 tokens
   int _getMaxTokensForChapter(int chapterNumber) {
-    // 基础token数
-    int baseTokens = 3000;
-    
-    // 根据章节数增加token，越往后，需要的前文越多
-    int additionalTokens = (chapterNumber - 1) * 200;
-    
-    // 设置上限，避免超出模型限制
-    int maxAdditionalTokens = 4000;  // 增加到5000，以容纳更多前文
-    
-    // 最终的token数
-    return baseTokens + (additionalTokens > maxAdditionalTokens ? maxAdditionalTokens : additionalTokens);
+    return 7000;  // 固定使用7000 tokens，确保能生成足够长度的内容
   }
 
   String _getChapterStyle(int number, int totalChapters) {
@@ -2687,15 +2678,13 @@ ${targetReaderPrompt.isNotEmpty ? "目标读者：\n" + targetReaderPrompt + "\n
       final systemPrompt = '''
 你是一个创作能力极强的专业小说写手。请按照下面的要求创作高质量的章节内容：
 
-1. 严格按照提供的大纲创作，确保内容符合要求
-2. 内容要连贯丰富，人物刻画生动，情节发展合理
-3. 创作风格: ${style ?? _getRandomStyle()}
-4. 直接进入正文创作，不要添加任何额外说明或标记
-5. 请用非常简洁的描述方式描述剧情，冲突部分可以详细描写
-6. 快节奏，多对话形式，以小见大
-7. 人物对话格式：'xxxxx'某某说道
-8. 不要使用小标题，不要加入旁白或解说，直接用流畅的叙述展开故事
-9. 必须保持与前面章节的情节连续性，包括时间线、人物状态和关系发展，确保读者感受到自然的故事进展
+1. 严格按照提供的大纲创作，确保内容符合要求，字数不低于3000字
+2. 创作风格: ${style ?? _getRandomStyle()}
+3. 直接进入正文创作，不要添加任何额外说明或标记
+4. 请用非常简洁的描述方式描述剧情，冲突部分可以详细描写
+5. 快节奏，多对话形式，以小见大
+6. 不要使用小标题，不要加入旁白或解说，直接用流畅的叙述展开故事
+7. 必须保持与前面章节的情节连续性，包括时间线、人物状态和关系发展，确保读者感受到自然的故事进展
 ''';
       
       // 从大纲中提取当前章节的信息
@@ -2717,7 +2706,7 @@ $chapterOutline
 ${targetReaders != null ? '- 目标读者：$targetReaders\n' : ''}
 - 章节编号：第$number章（共$totalChapters章）
 
-请直接开始创作章节内容，不要包含任何额外的标记、解释或格式说明。
+请直接开始创作章节内容，字数不要低于3000字，不要包含任何额外的标记、解释或格式说明。
 ''';
       
       final buffer = StringBuffer();
@@ -2726,7 +2715,7 @@ ${targetReaders != null ? '- 目标读者：$targetReaders\n' : ''}
       await for (final chunk in _aiService.generateTextStream(
         systemPrompt: systemPrompt,
         userPrompt: chapterPrompt,
-        maxTokens: _getMaxTokensForChapter(number),
+        maxTokens: 7000, // 固定使用7000 tokens
         temperature: 0.8,
         conversationId: conversationId, // 使用全局对话ID
       )) {
@@ -3185,7 +3174,7 @@ ${targetReaders != null ? '- 目标读者：$targetReaders\n' : ''}
       await for (final chunk in _aiService.generateTextStream(
         systemPrompt: systemPrompt,
         userPrompt: userPrompt,
-        maxTokens: _getMaxTokensForChapter(number),
+        maxTokens: 7000, // 固定使用7000 tokens
         temperature: 0.85,  // 增加温度以获得更多变化
         conversationId: regenerateConversationId, // 使用专门的重生成对话ID
       )) {
@@ -3474,7 +3463,7 @@ ${targetReaders != null ? '- 目标读者：$targetReaders\n' : ''}
       await for (final chunk in _aiService.generateTextStream(
         systemPrompt: systemPrompt,
         userPrompt: userPrompt,
-        maxTokens: _getMaxTokensForChapter(number),
+        maxTokens: 7000, // 固定使用7000 tokens
         temperature: 0.85,  // 增加温度以获得更多变化
         conversationId: conversationId, // 使用全局会话ID确保历史记录连续性
       )) {

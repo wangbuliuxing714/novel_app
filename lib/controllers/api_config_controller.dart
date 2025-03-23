@@ -244,7 +244,7 @@ class ApiConfigController extends GetxController {
     apiPath: '/v1/chat/completions',
     model: 'gpt-3.5-turbo',
     apiFormat: 'openai',
-    maxTokens: 8000,
+    maxTokens: 7000,
     temperature: 0.7,
   ).obs;
 
