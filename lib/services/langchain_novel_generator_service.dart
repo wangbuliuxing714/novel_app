@@ -47,8 +47,8 @@ class ChatHistory {
   ChatHistory({
     String? sessionId,
     List<ChatMessage>? messages,
-    this.maxContextLength = 16000,
-    this.maxMessages = 50,
+    this.maxContextLength = 16000000,
+    this.maxMessages = 5000,
   }) : 
     sessionId = sessionId ?? const Uuid().v4(),
     messages = messages ?? [];
@@ -111,8 +111,8 @@ class ChatHistory {
       messages: (json['messages'] as List)
           .map((m) => ChatMessage.fromJson(m))
           .toList(),
-      maxContextLength: json['maxContextLength'] ?? 16000,
-      maxMessages: json['maxMessages'] ?? 50,
+      maxContextLength: json['maxContextLength'] ?? 16000000,
+      maxMessages: json['maxMessages'] ?? 5000,
     );
   }
 }

@@ -550,7 +550,7 @@ class NovelDetailController extends GetxController {
    - 对话要自然流畅，符合说话人特点
    - 描写要细腻传神，避免空洞''',
         userPrompt: reviewRequirementsController.text,
-        maxTokens: 4000,
+        maxTokens: 7000,
         temperature: 0.7,
       )) {
         response += chunk;
