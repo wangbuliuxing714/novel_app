@@ -1,4 +1,4 @@
-我发现程序待生成时还是会发送两次重复的。user 消息。import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:novel_app/services/conversation_manager.dart';
