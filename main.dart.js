@@ -32129,9 +32129,9 @@ return new A.p7(s,c==null?A.a([],t.SU):c,a,b)},
 b7Z(a){var s,r=J.ak(a),q=r.j(a,"sessionId"),p=J.eB(t.j.a(r.j(a,"messages")),new A.abo(),t.Ri)
 p=A.a1(p,!0,A.r(p).i("an.E"))
 s=r.j(a,"maxContextLength")
-if(s==null)s=16e3
+if(s==null)s=16e6
 r=r.j(a,"maxMessages")
-return A.aXc(s,r==null?50:r,p,q)},
+return A.aXc(s,r==null?5000:r,p,q)},
 dV:function dV(a,b,c){this.a=a
 this.b=b
 this.c=c},
@@ -110536,7 +110536,7 @@ c=new A.y8(i,h,n,A.A(a,o),A.A(a,o),e,g)
 a=j.length
 if(a!==0){l.CW.p(0,d,j)
 A.ao("\u521b\u5efa\u4f1a\u8bdd\uff1a\u4fdd\u5b58\u5c0f\u8bf4\u5185\u5bb9\uff0c\u957f\u5ea6: "+a+"\u5b57\u7b26")}else A.ao("\u521b\u5efa\u4f1a\u8bdd\uff1a\u6ca1\u6709\u5c0f\u8bf4\u5185\u5bb9")
-b=A.aXc(16e3,50,null,d)
+b=A.aXc(16e6,5000,null,d)
 a=l.EA(c,j)
 o=Date.now()
 b.u0(new A.dV("system",a,new A.bm(o,!1)))
