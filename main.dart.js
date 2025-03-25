@@ -111187,7 +111187,7 @@ A.ao("\u7cfb\u7edf\u6d88\u606f:")
 for(c3=J.ar(i),c4=0;c3.v();){c5=c3.gH(c3)
 c6=J.ak(c5)
 if(J.d(c6.j(c5,"role"),"system")){++c4
-A.c3("  - \u7cfb\u7edf\u6d88\u606f["+c4+"]: "+A.e(A.aQ(c6.j(c5,"content")).length>100?B.c.X(A.aQ(c6.j(c5,"content")),0,100)+"...":c6.j(c5,"content")))}}A.ao("\u5bf9\u8bdd\u6d41:")
+A.c3("  ["+c4+"] "+A.e(A.aQ(c6.j(c5,"content")).length>100?B.c.X(A.aQ(c6.j(c5,"content")),0,100)+"...":c6.j(c5,"content")))}}A.ao("\u5bf9\u8bdd\u6d41:")
 for(c7=0,c8=0;c8<J.W(i);++c8)if(J.d(J.U(J.U(i,c8),"role"),"user")){++c7
 A.c3("  - \u5bf9\u8bdd\u5bf9["+c7+"]:")
 A.c3("    * \u7528\u6237: "+A.e(A.aQ(J.U(J.U(i,c8),"content")).length>100?B.c.X(A.aQ(J.U(J.U(i,c8),"content")),0,100)+"...":J.U(J.U(i,c8),"content")))
@@ -111211,7 +111211,7 @@ if(J.d(c6.j(c5,"role"),"user")&&J.d(c6.j(c5,"content"),g2)){A.c3("\u7528\u6237\u
 d1=!0
 break}}if(!d1){A.ao("\u6dfb\u52a0\u65b0\u7684\u7528\u6237\u63d0\u793a\u5230\u5bf9\u8bdd\u5386\u53f2")
 J.bB(i,A.a3(["role","user","content",g2],t.N,t.z))
-A.lD(f5,"user",g2)}}else{A.ao("\u4f7f\u7528\u5355\u6b21\u5bf9\u8bdd\u6a21\u5f0f\uff0c\u6ca1\u6709\u5bf9\u8bdd\u5386\u53f2")
+A.lD(f5,"user",g2)}else A.ao("\u8df3\u8fc7\u91cd\u590d\u6dfb\u52a0\u7528\u6237\u63d0\u793a\u5230\u5bf9\u8bdd\u5386\u53f2")}else{A.ao("\u4f7f\u7528\u5355\u6b21\u5bf9\u8bdd\u6a21\u5f0f\uff0c\u6ca1\u6709\u5bf9\u8bdd\u5386\u53f2")
 c3=t.N
 c5=t.z
 i=A.a([A.a3(["role","system","content",f9],c3,c5),A.a3(["role","user","content",g2],c3,c5)],c0)}c3=t.d,c5=t.N,c6=t.z,d0=f6>8192,d2=t.Jy,d3=t.m0,d4=t.K,d5=t.Mq,d6="\n\n\u6700\u65b0\u95ee\u9898\uff1a"+g2
