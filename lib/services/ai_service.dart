@@ -196,7 +196,7 @@ class AIService extends GetxService {
       for (var msg in messages) {
         if (msg['role'] == 'system') {
           systemMsgCount++;
-          print('  - 系统消息[$systemMsgCount]: ${(msg['content'] as String).length > 100 ? (msg['content'] as String).substring(0, 100) + "..." : msg['content']}');
+          print('  [$systemMsgCount] ${(msg['content'] as String).length > 100 ? (msg['content'] as String).substring(0, 100) + "..." : msg['content']}');
         }
       }
       
@@ -263,6 +263,9 @@ class AIService extends GetxService {
         
         // 更新对话历史
         ConversationManager.addMessage(conversationId, 'user', userPrompt);
+      } else {
+        // 如果提示已存在，不需要重新添加到对话历史
+        print('跳过重复添加用户提示到对话历史');
       }
     } else {
       // 使用单次对话模式
