@@ -27,6 +27,7 @@ import 'dart:math' as math;
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:novel_app/services/langchain_novel_generator_service.dart';
 
 class ParagraphInfo {
   final String content;
@@ -248,6 +249,17 @@ $newOutlineContent
     int wordCount = 10000,
   }) async {
     try {
+      // 获取LangChain服务（如果可用）
+      LangchainNovelGeneratorService? langchainService;
+      try {
+        langchainService = Get.find<LangchainNovelGeneratorService>();
+      } catch(e) {
+        print('LangChain服务不可用: $e');
+      }
+      
+      // 获取API配置控制器
+      final apiConfig = Get.find<ApiConfigController>();
+      
       // 基本提示词
       String masterPrompt = OutlineGeneration.getSystemPrompt(title, genre, theme);
       String outlinePrompt = '';
@@ -336,9 +348,6 @@ ${characterPrompt.isNotEmpty ? characterPrompt + '\n\n' : ''}
       // 分批生成大纲
       final StringBuffer fullOutlineBuffer = StringBuffer();
       
-      // 获取大纲对话ID
-      final outlineConversationId = '_outline_${title.replaceAll(' ', '_')}';
-      
       // 添加大纲的整体结构和主要情节线（只生成一次）
       if (onProgress != null) {
         onProgress('正在生成小说整体结构...');
@@ -378,7 +387,7 @@ $basePrompt
         userPrompt: "请仅生成整体架构和主要情节线部分，不要生成具体章节",
         maxTokens: _getMaxTokensForChapter(0),
         temperature: 0.7,
-        conversationId: outlineConversationId,
+        conversationId: null, // 使用全局对话ID，不再创建专用ID
       )) {
         structureContent += chunk;
         if (onContent != null) {
@@ -478,17 +487,51 @@ ${startChapter == 1 ? '' : '继续上文，'}从第$startChapter章开始：
               previousContent = previousContent.substring(previousContent.length - 3000);
             }
             
-            // 使用智能大纲生成
-            batchContent = await _aiService.generateSmartOutline(
-              prompt: batchPrompt,
-              previousContent: previousContent,
-              temperature: 0.7,
-              maxTokens: _getMaxTokensForChapter(0) * 2,
-              conversationId: outlineConversationId,
-            );
-            
-            if (onContent != null) {
-              onContent(batchContent);
+            // 使用普通大纲生成（替换智能大纲生成）
+            try {
+              // 构建包含上下文的提示词
+              String enhancedPrompt = '''
+${batchPrompt}
+
+请注意以下要求：
+1. 确保与前面生成的内容保持连贯性
+2. 确保情节发展合理，角色行为一致
+3. 避免出现逻辑断层或情节冲突
+''';
+              
+              await for (final chunk in _aiService.generateOutlineTextStream(
+                systemPrompt: "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。确保每个章节之间情节连贯，角色发展合理。",
+                userPrompt: enhancedPrompt,
+                maxTokens: _getMaxTokensForChapter(0) * 2,
+                temperature: 0.7,
+                novelTitle: title, // 传递小说标题
+              )) {
+                batchContent += chunk;
+                if (onContent != null) {
+                  onContent(chunk);
+                }
+              }
+            } catch (e) {
+              print('大纲生成失败: $e');
+              
+              // 如果出错，使用备用方法
+              if (onProgress != null) {
+                onProgress('标准生成遇到问题，尝试备用方法...');
+              }
+              
+              // 使用标准流式生成作为备用
+              await for (final chunk in _aiService.generateOutlineTextStream(
+                systemPrompt: batchPrompt,
+                userPrompt: "请按照要求生成第$startChapter到第$endChapter章的详细大纲",
+                maxTokens: _getMaxTokensForChapter(0) * 2,
+                temperature: 0.7,
+                novelTitle: title, // 传递小说标题
+              )) {
+                batchContent += chunk;
+                if (onContent != null) {
+                  onContent(chunk);
+                }
+              }
             }
           } catch (e) {
             print('智能大纲生成失败，切换到标准模式: $e');
@@ -500,10 +543,11 @@ ${startChapter == 1 ? '' : '继续上文，'}从第$startChapter章开始：
             // 使用标准流式生成
             await for (final chunk in _aiService.generateOutlineTextStream(
               systemPrompt: batchPrompt,
-              userPrompt: "请按照要求生成第$startChapter到第$endChapter章的详细大纲，确保与前面章节情节连贯",
+              userPrompt: "请按照要求生成第$startChapter到第$endChapter章的详细大纲",
               maxTokens: _getMaxTokensForChapter(0) * 2,
               temperature: 0.7,
-              conversationId: outlineConversationId,
+              conversationId: null, // 使用全局对话ID，不再创建专用ID
+              novelTitle: title, // 传递小说标题
             )) {
               batchContent += chunk;
               if (onContent != null) {
@@ -518,7 +562,7 @@ ${startChapter == 1 ? '' : '继续上文，'}从第$startChapter章开始：
             userPrompt: "请按照要求生成第$startChapter到第$endChapter章的详细大纲",
             maxTokens: _getMaxTokensForChapter(0) * 2,
             temperature: 0.7,
-            conversationId: outlineConversationId,
+            novelTitle: title, // 传递小说标题
           )) {
             batchContent += chunk;
             if (onContent != null) {
@@ -545,8 +589,46 @@ ${startChapter == 1 ? '' : '继续上文，'}从第$startChapter章开始：
               previousContent = previousContent.substring(previousContent.length - 2000);
             }
             
-            // 检查并修复连贯性
-            processedBatch = await _ensureOutlineCoherence(processedBatch, previousContent);
+            // 检查并修复连贯性 - 使用langchain而不是自定义方法
+            try {
+              // 只有在LangChain服务可用时才使用它
+              if (langchainService != null) {
+                // 构建LangChain上下文
+                final sessionId = langchainService.createNovelSession(
+                  title: title,
+                  genre: genre,
+                  plotOutline: previousContent,
+                  style: theme
+                );
+                
+                // 生成修复内容
+                final fixedContent = await langchainService.generateNovelContent(
+                  sessionId: sessionId,
+                  userMessage: '''
+分析以下大纲内容，并修复可能的连贯性问题：
+
+$processedBatch
+
+请确保修复后的内容与前文 ($previousContent) 保持完美的情节连贯性，
+不要添加任何额外评论或解释，直接返回修复后的内容。
+''',
+                  temperature: 0.5
+                );
+                
+                // 删除会话（避免积累太多会话）
+                await langchainService.deleteSession(sessionId);
+                
+                // 使用修复后的内容
+                processedBatch = fixedContent;
+              } else {
+                // 如果LangChain不可用，使用原始方法
+                processedBatch = await _ensureOutlineCoherence(processedBatch, previousContent);
+              }
+            } catch (e) {
+              print('LangChain连贯性修复失败: $e');
+              // 继续使用原始方法作为备用
+              processedBatch = await _ensureOutlineCoherence(processedBatch, previousContent);
+            }
             
             if (onProgress != null) {
               onProgress('大纲连贯性检查完成，继续生成...');
@@ -2944,14 +3026,18 @@ $paragraph
         }
       } else {
         // 使用章节模型
+        final chapterModelConfig = _apiConfig.getChapterModel();
+        print('使用章节专用模型: ${chapterModelConfig.name}');
+        
         await for (final chunk in _aiService.generateTextStream(
           systemPrompt: MasterPrompts.basicPrinciples,
           userPrompt: prompt,
           temperature: temperature,
           repetitionPenalty: repetitionPenalty,
-          maxTokens: _apiConfig.getChapterModel().maxTokens,
-          topP: _apiConfig.getChapterModel().topP,
+          maxTokens: chapterModelConfig.maxTokens,
+          topP: chapterModelConfig.topP,
           conversationId: novelTitle != null ? '_outline_${novelTitle.replaceAll(' ', '_')}' : null,
+          specificModelConfig: chapterModelConfig,
         )) {
           response += chunk;
         }

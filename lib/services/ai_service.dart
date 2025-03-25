@@ -35,6 +35,23 @@ class AIService extends GetxService {
   
   AIService(this._apiConfig);
 
+  // 添加一个方法来获取小说的基础ID（大纲和章节共用同一个基础ID）
+  String _getNovelBaseId(String novelTitle) {
+    return '_novel_${novelTitle.replaceAll(' ', '_')}';
+  }
+  
+  // 获取小说大纲的会话ID
+  String _getNovelOutlineId(String novelTitle) {
+    String baseId = _getNovelBaseId(novelTitle);
+    return '${baseId}_outline';
+  }
+  
+  // 获取小说章节的会话ID
+  String _getNovelChapterId(String novelTitle, int chapterNumber) {
+    String baseId = _getNovelBaseId(novelTitle);
+    return '${baseId}_chapter_$chapterNumber';
+  }
+
   // 获取或创建小说的对话ID - 简化回最初版本
   String _getNovelConversationId(String novelTitle) {
     // 优先使用一致的命名模式，提高历史记录的可追踪性
@@ -105,11 +122,16 @@ class AIService extends GetxService {
         attempts++;
         buffer.clear(); // 清空之前的内容
         
+        // 获取章节专用模型配置
+        final chapterModelConfig = Get.find<ApiConfigController>().getChapterModel();
+        print('内容生成使用章节专用模型: ${chapterModelConfig.name}');
+        
         await for (final chunk in generateTextStream(
           systemPrompt: "你是一个专业的小说创作助手，请根据用户的要求提供高质量的内容。请用非常简洁的描述方式描述剧情，冲突部分可以详细描写，快节奏，多对话形式，以小见大，人物对话格式：'xxxxx'某某说道。严禁使用任何形式的小标题、序号或章节编号。严禁使用情节点、转折点、高潮点等标题或分段标记。严禁使用总结性语言，如\"总之\"、\"总的来说\"、\"简而言之\"等。严禁添加旁白或解说，严禁添加\"作者注\"、\"编者按\"等内容。直接用流畅的叙述展开故事，只关注推动情节发展的内容。内容字数必须不少于3000字，字数一定要达到3000字，确保内容充分展开。",
           userPrompt: enhancedPrompt,
           temperature: 0.7,
           maxTokens: 7000,
+          specificModelConfig: chapterModelConfig,
         )) {
           buffer.write(chunk);
         }
@@ -948,6 +970,7 @@ class AIService extends GetxService {
     }
   }
 
+  // 修改章节生成方法，使用与大纲相关联的ID
   Future<String> generateChapterContent(
     String basePrompt, {
     int? chapterNumber,
@@ -962,9 +985,14 @@ class AIService extends GetxService {
     final buffer = StringBuffer();
     int attempts = 0;
     
+    // 确保有小说标题
+    if (novelTitle == null || novelTitle.isEmpty) {
+      novelTitle = "未命名小说_${DateTime.now().millisecondsSinceEpoch}";
+    }
+    
     // 生成一个固定的会话ID，确保同一小说章节使用相同ID
     if (novelTitle != null && chapterNumber != null && conversationId == null) {
-      conversationId = '_chapter_${novelTitle.replaceAll(' ', '_')}_$chapterNumber';
+      conversationId = _getNovelChapterId(novelTitle, chapterNumber);
       print('为章节生成固定ID: $conversationId');
     }
     
@@ -1051,12 +1079,18 @@ $basePrompt
         final startTime = DateTime.now();
         
         print('开始使用对话ID生成章节内容: $conversationId');
+        
+        // 获取章节专用模型配置
+        final chapterModelConfig = Get.find<ApiConfigController>().getChapterModel();
+        print('使用章节专用模型: ${chapterModelConfig.name}');
+        
         await for (final chunk in generateTextStream(
           systemPrompt: "你是一个专业的小说章节创作助手，请根据用户的需求提供高质量、有代入感的章节内容。请用非常简洁的描述方式描述剧情，冲突部分可以详细描写，快节奏，多对话形式，以小见大，人物对话格式：'xxxxx'某某说道。严禁使用任何形式的小标题、序号或章节编号。严禁使用情节点、转折点、高潮点等标题或分段标记。严禁使用总结性语言，如\"总之\"、\"总的来说\"、\"简而言之\"等。严禁添加旁白或解说，严禁添加\"作者注\"、\"编者按\"等内容。直接用流畅的叙述展开故事，只关注推动情节发展的内容。必须保持与前面章节的情节连续性，包括时间线、人物状态和关系发展，确保读者感受到自然的故事进展。每章必须至少3000字，字数一定要达到3000字，确保内容充分展开。",
           userPrompt: basePrompt,
           temperature: 0.8,
           maxTokens: 7000,
-          conversationId: conversationId
+          conversationId: conversationId,
+          specificModelConfig: chapterModelConfig
         )) {
           buffer.write(chunk);
           onProgress?.call(chunk);
@@ -1152,6 +1186,10 @@ $basePrompt
         finalPrompt = knowledgeBaseController.buildPromptWithKnowledge(prompt);
       }
       
+      // 获取章节专用模型配置
+      final chapterModelConfig = Get.find<ApiConfigController>().getChapterModel();
+      print('短篇小说生成使用章节专用模型: ${chapterModelConfig.name}');
+      
       await for (final chunk in generateContentStream(
         systemPrompt: finalPrompt + "\n\n创作要求：请用非常简洁的描述方式描述剧情，冲突部分可以详细描写，快节奏，多对话形式，以小见大，人物对话格式：'xxxxx'某某说道。严禁使用任何形式的小标题、序号或章节编号。严禁使用情节点、转折点、高潮点等标题或分段标记。严禁使用总结性语言，如\"总之\"、\"总的来说\"、\"简而言之\"等。严禁添加旁白或解说，严禁添加\"作者注\"、\"编者按\"等内容。直接用流畅的叙述展开故事，只关注推动情节发展的内容。内容字数必须不少于3000字，字数一定要达到3000字，确保内容充分展开。",
         userPrompt: "请根据以上要求创作一篇高质量的短篇小说内容",
@@ -1159,6 +1197,7 @@ $basePrompt
         maxTokens: 7500, // 最大token上限
         repetitionPenalty: 1.0, // 不进行重复惩罚，允许更自然的文学表达
         topP: 0.95, // 提高多样性
+        specificModelConfig: chapterModelConfig,
       )) {
         buffer.write(chunk);
       }
@@ -1181,14 +1220,22 @@ $basePrompt
     double? repetitionPenalty,
     String? conversationId,
     String? novelTitle,
+    ModelConfig? specificModelConfig,
   }) async* {
-    // 如果提供了小说标题但没有提供对话ID，使用相同的对话ID系统
+    // 如果提供了小说标题但没有提供对话ID，使用小说特定的对话ID系统
     if (novelTitle != null && conversationId == null) {
-      conversationId = _getNovelConversationId(novelTitle);
-      print('使用小说"$novelTitle"的对话ID: $conversationId');
+      conversationId = _getNovelOutlineId(novelTitle);
+      print('使用小说特定大纲对话ID: $conversationId');
     }
     
-    // 使用通用的生成文本流方法
+    // 获取大纲模型配置（如果未指定）
+    if (specificModelConfig == null) {
+      // 从ApiConfigController获取大纲模型配置
+      specificModelConfig = Get.find<ApiConfigController>().getOutlineModel();
+      print('使用大纲专用模型: ${specificModelConfig.name}');
+    }
+    
+    // 使用通用的生成文本流方法，传递大纲专用模型
     yield* generateTextStream(
       systemPrompt: systemPrompt,
       userPrompt: userPrompt,
@@ -1197,6 +1244,7 @@ $basePrompt
       maxTokens: maxTokens ?? 2000,
       repetitionPenalty: repetitionPenalty ?? 1.3,
       conversationId: conversationId,
+      specificModelConfig: specificModelConfig,
     );
   }
 
@@ -1209,6 +1257,7 @@ $basePrompt
     int? maxTokens,
     double? repetitionPenalty,
     String? conversationId,
+    ModelConfig? specificModelConfig,
   }) async* {
     // 使用通用的生成文本流方法
     yield* generateTextStream(
@@ -1219,9 +1268,11 @@ $basePrompt
       maxTokens: maxTokens ?? 7000,
       repetitionPenalty: repetitionPenalty ?? 1.0,
       conversationId: conversationId,
+      specificModelConfig: specificModelConfig,
     );
   }
 
+  // 修改生成大纲的方法，使用与章节相关联的ID
   Future<String> generateOutline(String prompt, {String? novelTitle}) async {
     final completer = Completer<String>();
     final buffer = StringBuffer();
@@ -1229,14 +1280,16 @@ $basePrompt
     final int maxRetries = 3;
     final int minLength = 150; // 大纲最小长度限制
     
-    // 获取或创建小说的对话ID
-    String? conversationId;
-    if (novelTitle != null) {
-      conversationId = '_outline_${novelTitle.replaceAll(' ', '_')}';
-      print('为大纲生成固定ID: $conversationId');
+    // 确保有小说标题
+    if (novelTitle == null || novelTitle.isEmpty) {
+      novelTitle = "未命名小说_${DateTime.now().millisecondsSinceEpoch}";
     }
     
-    String requestKey = '${novelTitle ?? "unknown"}_outline';
+    // 使用小说特定的大纲ID
+    String conversationId = _getNovelOutlineId(novelTitle);
+    print('使用小说特定大纲ID: $conversationId');
+    
+    String requestKey = '${novelTitle}_outline';
     
     // 检查是否在3秒内处理过相同的请求
     int currentTime = DateTime.now().millisecondsSinceEpoch;
@@ -1245,13 +1298,11 @@ $basePrompt
       if (currentTime - lastProcessTime < 3000) { // 3秒内的重复请求
         print('检测到3秒内的重复大纲生成请求，跳过处理');
         // 尝试从历史中获取最近的结果
-        if (conversationId != null) {
-          final messages = ConversationManager.getMessages(conversationId);
-          for (var i = messages.length - 1; i >= 0; i--) {
-            if (messages[i]['role'] == 'assistant' && (messages[i]['content'] as String).length > minLength) {
-              print('返回历史中的大纲内容');
-              return messages[i]['content'] as String;
-            }
+        final messages = ConversationManager.getMessages(conversationId);
+        for (var i = messages.length - 1; i >= 0; i--) {
+          if (messages[i]['role'] == 'assistant' && (messages[i]['content'] as String).length > minLength) {
+            print('返回历史中的大纲内容');
+            return messages[i]['content'] as String;
           }
         }
       }
@@ -1261,26 +1312,26 @@ $basePrompt
     _processingRequests[requestKey] = currentTime;
     
     try {
-      // 如果对话ID不为空，则初始化系统提示词
-      if (conversationId != null) {
-        // 检查是否已有系统提示
-        final messages = ConversationManager.getMessages(conversationId);
-        bool hasSystemMessage = false;
-        for (var msg in messages) {
-          if (msg['role'] == 'system') {
-            hasSystemMessage = true;
-            break;
-          }
+      // 初始化系统提示词
+      // 检查是否已有系统提示
+      final messages = ConversationManager.getMessages(conversationId);
+      bool hasSystemMessage = false;
+      for (var msg in messages) {
+        if (msg['role'] == 'system') {
+          hasSystemMessage = true;
+          break;
         }
-        
-        if (!hasSystemMessage) {
-          ConversationManager.addMessage(conversationId, 'system', 
-            "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。确保每个章节之间情节连贯，角色发展合理。请为每章节设计与整体情节结构相符的内容，避免逻辑断层和人物行动不一致。特别强调情节的连续性和一致性，确保时间线、人物状态和关系发展始终保持清晰和合理。");
-        }
-        
-        // 添加用户提示
-        ConversationManager.addMessage(conversationId, 'user', prompt);
       }
+      
+      if (!hasSystemMessage) {
+        ConversationManager.addMessage(conversationId, 'system', 
+          "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。确保每个章节之间情节连贯，角色发展合理。请为每章节设计与整体情节结构相符的内容，避免逻辑断层和人物行动不一致。特别强调情节的连续性和一致性，确保时间线、人物状态和关系发展始终保持清晰和合理。");
+        print('为小说特定对话添加系统提示');
+      }
+      
+      // 添加用户提示
+      ConversationManager.addMessage(conversationId, 'user', prompt);
+      print('向小说特定对话添加用户提示');
       
       // 尝试生成，允许重试
       while (attempts < maxRetries) {
@@ -1289,12 +1340,17 @@ $basePrompt
         
         print('开始生成大纲，尝试次数: $attempts');
         
+        // 获取大纲专用模型配置
+        final outlineModelConfig = Get.find<ApiConfigController>().getOutlineModel();
+        print('使用大纲专用模型: ${outlineModelConfig.name}');
+        
         await for (final chunk in generateOutlineTextStream(
           systemPrompt: "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。确保每个章节之间情节连贯，角色发展合理。请为每章节设计与整体情节结构相符的内容，避免逻辑断层和人物行动不一致。",
           userPrompt: prompt,
           temperature: 0.7,
           maxTokens: 2000,
-          conversationId: conversationId, // 使用对话ID
+          conversationId: conversationId, // 使用小说特定对话ID
+          novelTitle: novelTitle
         )) {
           buffer.write(chunk);
         }
@@ -1306,14 +1362,19 @@ $basePrompt
           continue;
         }
         
-        // 如果使用对话ID，将AI的回复添加到对话历史
-        if (conversationId != null) {
-          ConversationManager.addMessage(conversationId, 'assistant', content);
-          
-          // 添加系统提示，指导后续章节生成
-          ConversationManager.addMessage(conversationId, 'system', 
-            "请在生成章节内容时严格参照上述大纲，确保内容与大纲一致，情节连贯。每个章节应与大纲中描述的内容相符。生成章节时，应该保持整体小说世界观和角色设定的一致性。必须确保前后章节的时间线连贯，人物状态和情感发展连续，关系变化合理，让读者能感受到自然流畅的故事进展。请用非常简洁的描述方式描述剧情，冲突部分可以详细描写，快节奏，多对话形式，以小见大，人物对话格式：'xxxxx'某某说道。严禁使用任何形式的小标题、序号或章节编号。严禁使用情节点、转折点、高潮点等标题或分段标记。严禁使用总结性语言，如\"总之\"、\"总的来说\"、\"简而言之\"等。严禁添加旁白或解说，严禁添加\"作者注\"、\"编者按\"等内容。直接用流畅的叙述展开故事，只关注推动情节发展的内容。每章必须至少3000字，字数一定要达到3000字，确保内容充分展开。");
-        }
+        // 将AI的回复添加到对话历史
+        ConversationManager.addMessage(conversationId, 'assistant', content);
+        
+        // 添加系统提示，指导后续章节生成
+        ConversationManager.addMessage(conversationId, 'system', 
+          "请在生成章节内容时严格参照上述大纲，确保内容与大纲一致，情节连贯。每个章节应与大纲中描述的内容相符。生成章节时，应该保持整体小说世界观和角色设定的一致性。必须确保前后章节的时间线连贯，人物状态和情感发展连续，关系变化合理，让读者能感受到自然流畅的故事进展。请用非常简洁的描述方式描述剧情，冲突部分可以详细描写，快节奏，多对话形式，以小见大，人物对话格式：'xxxxx'某某说道。严禁使用任何形式的小标题、序号或章节编号。严禁使用情节点、转折点、高潮点等标题或分段标记。严禁使用总结性语言，如\"总之\"、\"总的来说\"、\"简而言之\"等。严禁添加旁白或解说，严禁添加\"作者注\"、\"编者按\"等内容。直接用流畅的叙述展开故事，只关注推动情节发展的内容。每章必须至少3000字，字数一定要达到3000字，确保内容充分展开。");
+        
+        // 将大纲内容保存到小说的基本会话ID中，使章节生成时可以访问
+        String baseId = _getNovelBaseId(novelTitle);
+        ConversationManager.addMessage(baseId, 'system', "小说《$novelTitle》的大纲");
+        ConversationManager.addMessage(baseId, 'user', "请创建小说大纲");
+        ConversationManager.addMessage(baseId, 'assistant', content);
+        print('已将大纲内容保存到小说基础ID: $baseId');
         
         return content;
       }
@@ -1324,130 +1385,6 @@ $basePrompt
       print('生成大纲时出错: $e');
       throw e;
     }
-  }
-
-  // 使用大纲模型生成更智能、更连贯的大纲
-  Future<String> generateSmartOutline({
-    required String prompt,
-    required String? previousContent,
-    double? temperature,
-    int? maxTokens,
-    String? conversationId,
-    String? novelTitle,
-  }) async {
-    final completer = Completer<String>();
-    final buffer = StringBuffer();
-    int attempts = 0;
-    final int maxRetries = 3;
-    final int minLength = 200; // 大纲最小长度限制
-    
-    // 如果提供了小说标题但没有提供对话ID，创建或获取对话ID
-    if (novelTitle != null && conversationId == null) {
-      conversationId = '_outline_${novelTitle.replaceAll(' ', '_')}';
-      print('为大纲生成固定ID: $conversationId');
-    }
-    
-    // 键是novelTitle+outline，值是处理时间戳
-    String requestKey = '${novelTitle ?? "unknown"}_outline';
-    
-    // 检查是否在3秒内处理过相同的请求
-    int currentTime = DateTime.now().millisecondsSinceEpoch;
-    if (_processingOutlineRequests.containsKey(requestKey)) {
-      int lastProcessTime = _processingOutlineRequests[requestKey]!;
-      if (currentTime - lastProcessTime < 3000) { // 3秒内的重复请求
-        print('检测到3秒内的重复大纲生成请求，跳过处理');
-        // 尝试从历史中获取最近的结果
-        if (conversationId != null) {
-          final messages = ConversationManager.getMessages(conversationId);
-          for (var i = messages.length - 1; i >= 0; i--) {
-            if (messages[i]['role'] == 'assistant' && (messages[i]['content'] as String).length > minLength) {
-              print('返回历史中的大纲内容');
-              return messages[i]['content'] as String;
-            }
-          }
-        }
-      }
-    }
-    
-    // 记录当前请求时间戳
-    _processingOutlineRequests[requestKey] = currentTime;
-    
-    // 构建考虑连贯性的提示词
-    String enhancedPrompt = prompt;
-    if (previousContent != null && previousContent.isNotEmpty) {
-      enhancedPrompt = '''
-这是已经生成的大纲内容：
-$previousContent
-
-请基于以上大纲内容继续生成，确保情节连贯，人物发展合理：
-$prompt
-
-要求：
-1. 严格遵循之前生成内容中的设定、人物特征和关系
-2. 确保情节发展合理，与前文相衔接
-3. 避免出现前后矛盾或逻辑断层
-4. 人物行为和对话要符合其性格特点和动机
-''';
-    }
-    
-    while (attempts < maxRetries) {
-      try {
-        attempts++;
-        buffer.clear(); // 清空之前的内容
-       
-        await for (final chunk in generateTextStream(
-          systemPrompt: "你是一个专业的小说大纲创作助手，精通小说结构和故事发展。请根据用户需求提供连贯、合理的大纲。",
-          userPrompt: enhancedPrompt,
-          temperature: temperature ?? 0.7,
-          maxTokens: maxTokens ?? 2000,
-          conversationId: conversationId,
-        )) {
-          buffer.write(chunk);
-        }
-        
-        String content = buffer.toString();
-        
-        if (content.length < minLength && attempts < maxRetries) {
-          print('生成的大纲内容太短，尝试重新生成 (尝试 $attempts/$maxRetries)');
-          enhancedPrompt = '''
-${enhancedPrompt}
-
-你的回答太简短了，请提供更详细的大纲内容，至少需要包含：
-1. 更详细的情节发展描述
-2. 主要角色的行动和动机
-3. 每个部分的主要冲突和解决方式
-4. 至少${minLength * 2}个字符的内容量
-''';
-          continue;
-        }
-        
-        // 如果大纲生成成功，将其添加到对话历史中
-        if (conversationId != null && content.length >= minLength) {
-          print('将智能大纲添加到对话历史中，对话ID: $conversationId');
-          // 添加大纲内容作为助手的回复
-          ConversationManager.addMessage(conversationId, 'assistant', 
-            "我已经为这部小说创建了如下完整大纲:\n\n" + content);
-          
-          // 添加系统提示，指导后续章节生成
-          ConversationManager.addMessage(conversationId, 'system', 
-            "请在生成章节内容时严格参照上述大纲，确保内容与大纲一致，情节连贯。每个章节应与大纲中描述的内容相符，角色行为和发展应保持一致。请用非常简洁的描述方式描述剧情，冲突部分可以详细描写，快节奏，多对话形式，以小见大，人物对话格式：'xxxxx'某某说道。严禁使用任何形式的小标题、序号或章节编号。严禁使用情节点、转折点、高潮点等标题或分段标记。严禁使用总结性语言，如\"总之\"、\"总的来说\"、\"简而言之\"等。严禁添加旁白或解说，严禁添加\"作者注\"、\"编者按\"等内容。直接用流畅的叙述展开故事，只关注推动情节发展的内容。每章必须至少3000字，字数一定要达到3000字，确保内容充分展开。");
-        }
-        
-        completer.complete(content);
-        break;
-        
-      } catch (e) {
-        print('生成智能大纲失败，尝试次数：$attempts，错误：$e');
-        if (attempts >= maxRetries) {
-          completer.completeError('生成智能大纲失败：$e');
-          break;
-        }
-        
-        await Future.delayed(Duration(seconds: 1));
-      }
-    }
-    
-    return completer.future;
   }
 
   // 非流式生成文本内容的方法
