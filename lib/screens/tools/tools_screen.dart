@@ -7,7 +7,6 @@ import 'package:novel_app/models/novel.dart';
 import 'package:novel_app/screens/character_generator_screen.dart';
 import 'package:novel_app/screens/background_generator_screen.dart';
 import 'package:novel_app/screens/knowledge_base_screen.dart';
-import 'package:novel_app/screens/tools/novel_chat_screen.dart';
 import 'package:novel_app/screens/debug/conversation_debug_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -40,14 +39,6 @@ class ToolsScreen extends StatelessWidget {
                 ),
                 const Divider(),
                 ListTile(
-                  leading: const Icon(Icons.chat_bubble_outline),
-                  title: const Text('小说对话'),
-                  subtitle: const Text('与小说角色进行互动对话'),
-                  trailing: const Icon(Icons.arrow_forward_ios),
-                  onTap: () => Get.to(() => const NovelChatScreen()),
-                ),
-                const Divider(),
-                ListTile(
                   leading: const Icon(Icons.person_add),
                   title: const Text('角色生成器'),
                   subtitle: const Text('自动生成小说角色'),
@@ -72,14 +63,67 @@ class ToolsScreen extends StatelessWidget {
                 ),
                 const Divider(),
                 ListTile(
-                  leading: const Icon(Icons.history),
+                  leading: const Icon(Icons.lock),
                   title: const Text('会话历史调试'),
                   subtitle: const Text('查看和管理AI对话历史记录'),
                   trailing: const Icon(Icons.arrow_forward_ios),
-                  onTap: () => Get.to(() => const ConversationDebugScreen()),
+                  onTap: () => _showPasswordDialog(context),
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showPasswordDialog(BuildContext context) {
+    final TextEditingController passwordController = TextEditingController();
+    final RxBool isPasswordIncorrect = false.obs;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.lock, color: Colors.orange),
+            const SizedBox(width: 10),
+            const Text('需要密码'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('会话历史调试功能受密码保护，请输入密码继续'),
+            const SizedBox(height: 20),
+            Obx(() => TextField(
+              controller: passwordController,
+              decoration: InputDecoration(
+                labelText: '密码',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.vpn_key),
+                errorText: isPasswordIncorrect.value ? '密码错误，请重试' : null,
+              ),
+              obscureText: true,
+              keyboardType: TextInputType.number,
+            )),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (passwordController.text == '147258') {
+                Navigator.pop(context);
+                Get.to(() => const ConversationDebugScreen());
+              } else {
+                isPasswordIncorrect.value = true;
+              }
+            },
+            child: const Text('确认'),
           ),
         ],
       ),
