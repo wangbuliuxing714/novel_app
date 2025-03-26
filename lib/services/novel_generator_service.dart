@@ -1124,6 +1124,9 @@ ${targetReaderPrompt.isNotEmpty ? "目标读者：\n" + targetReaderPrompt + "\n
         createdAt: DateTime.now(),
       );
       
+      // 将大纲作为第0章保存
+      novel.addOutlineAsChapter();
+      
       // 记录完成时间并计算耗时
       final endTime = DateTime.now();
       final duration = endTime.difference(startTime);
@@ -1213,6 +1216,9 @@ ${targetReaderPrompt.isNotEmpty ? "目标读者：\n" + targetReaderPrompt + "\n
           updateRealtimeOutput('\n========== 小说大纲 ==========\n');
           updateRealtimeOutput(outlineContent);
           updateRealtimeOutput('\n================================\n\n');
+          
+          // 将大纲作为第0章保存
+          novel.addOutlineAsChapter();
         }
         
         // 生成章节内容

@@ -565,6 +565,57 @@ class LangchainNovelGeneratorService extends GetxService {
     return _lastError[sessionId];
   }
 
+  // 生成聊天回复（用于岱宗AI聊天功能）
+  Future<String> generateChatResponse({
+    required String systemPrompt,
+    required String userPrompt,
+    double temperature = 0.7,
+  }) async {
+    try {
+      print('使用LangChain生成聊天回复');
+      print('系统提示词: ${systemPrompt.substring(0, min(100, systemPrompt.length))}...');
+      print('用户输入: $userPrompt');
+      
+      // 创建临时会话
+      final sessionId = 'chat_${const Uuid().v4()}';
+      final history = ChatHistory(sessionId: sessionId);
+      
+      // 添加系统消息
+      history.addMessage(ChatMessage(
+        role: 'system',
+        content: systemPrompt,
+      ));
+      
+      // 添加用户消息
+      history.addMessage(ChatMessage(
+        role: 'user',
+        content: userPrompt,
+      ));
+      
+      // 提取历史消息，保留所有消息（包括系统消息）
+      final historyMessages = history.messages
+          .map((msg) => {'role': msg.role, 'content': msg.content})
+          .toList();
+      
+      print('准备发送到AI的消息数量: ${historyMessages.length}');
+      
+      // 生成回复，使用完整的历史消息
+      final response = await _aiService.generateText(
+        systemPrompt: systemPrompt,
+        userPrompt: userPrompt,
+        temperature: temperature,
+        maxTokens: _apiConfig.getCurrentModel().maxTokens,
+        messages: historyMessages, // 传递完整的历史消息，包括系统消息
+      );
+      
+      print('AI生成的回复长度: ${response.length}字符');
+      return response;
+    } catch (e) {
+      print('生成聊天回复失败: $e');
+      throw Exception('生成聊天回复失败: $e');
+    }
+  }
+
   // 构建系统提示词
   String buildSystemPrompt(NovelContext context, [String? novelContent]) {
     final buffer = StringBuffer();

@@ -23,6 +23,7 @@ import 'package:novel_app/widgets/common/animated_button.dart';
 import 'package:novel_app/widgets/common/animated_card.dart';
 import 'package:novel_app/widgets/common/animated_list_tile.dart';
 import 'package:novel_app/screens/donate_screen.dart';
+import 'package:novel_app/screens/ai_chat/daizong_ai_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,6 +50,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('岱宗文脉'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.smart_toy),
+            tooltip: '岱宗AI',
+            onPressed: () => Get.toNamed('/daizong_ai'),
+          ),
           IconButton(
             icon: const Icon(Icons.build),
             tooltip: '工具广场',
@@ -91,6 +97,14 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Get.back();
                 Get.toNamed('/library');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.smart_toy),
+              title: const Text('岱宗AI'),
+              onTap: () {
+                Get.back();
+                Get.toNamed('/daizong_ai');
               },
             ),
             ListTile(
