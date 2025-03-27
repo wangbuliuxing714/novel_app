@@ -138,6 +138,7 @@ class NovelGeneratorService extends GetxService {
   }
 
   // 检查章节大纲内容的连贯性
+  /*
   Future<String> _ensureOutlineCoherence(String newOutlineContent, String previousOutlineContent) async {
     // 如果没有之前的内容作为参考，直接返回新内容
     if (previousOutlineContent.isEmpty) {
@@ -215,6 +216,7 @@ $newOutlineContent
     // 如果没有问题或修复失败，返回原始内容
     return newOutlineContent;
   }
+  */
 
   // 保存生成的内容到缓存
   Future<void> _cacheContent(String chapterKey, String content) async {
@@ -346,6 +348,7 @@ ${characterPrompt.isNotEmpty ? characterPrompt + '\n\n' : ''}
 ''';
 
       // 分批生成大纲
+      final int batchSize = 5; // 减少每批处理的章节数，提高连贯性
       final StringBuffer fullOutlineBuffer = StringBuffer();
       
       // 添加大纲的整体结构和主要情节线（只生成一次）
@@ -395,17 +398,17 @@ $basePrompt
         }
       }
       
-      fullOutlineBuffer.writeln(structureContent.trim());
-      fullOutlineBuffer.writeln("\n三、具体章节");
-      
       // 将结构和情节线保存下来，用于后续章节生成参考
       final String structureAndPlotContent = structureContent.trim();
+      
+      // 添加大纲的整体架构和主要情节线到缓冲区
+      fullOutlineBuffer.writeln(structureContent.trim());
+      fullOutlineBuffer.writeln("\n三、具体章节");
       
       // 保存已生成的章节大纲内容，用于后续章节生成参考
       StringBuffer generatedChaptersBuffer = StringBuffer();
       
       // 分批生成章节大纲
-      final int batchSize = 5; // 减少每批处理的章节数，提高连贯性
       for (int startChapter = 1; startChapter <= totalChapters; startChapter += batchSize) {
         final int endChapter = (startChapter + batchSize - 1) > totalChapters 
             ? totalChapters 
@@ -469,94 +472,67 @@ ${startChapter == 1 ? '' : '继续上文，'}从第$startChapter章开始：
 第${startChapter+1}章：...（后续章节）
 ''';
 
-        // 使用智能大纲生成
+        // 使用标准大纲生成
         String batchContent = '';
-        if (startChapter > 1 && generatedChaptersBuffer.isNotEmpty) {
-          // 使用带有上下文的智能大纲生成
-          final userPrompt = "请按照要求生成第$startChapter到第$endChapter章的详细大纲，确保与前面章节情节连贯";
-          
-          if (onProgress != null) {
-            onProgress('正在使用智能生成模式创建大纲...');
-          }
-          
-          try {
-            // 获取前一批次的内容作为上下文
+        // 所有批次都使用标准流式生成，不再区分是第一批次还是后续批次
+        try {
+          // 获取上下文（如果存在）
+          String contextPrompt = '';
+          if (startChapter > 1 && generatedChaptersBuffer.isNotEmpty) {
             String previousContent = generatedChaptersBuffer.toString().trim();
             // 限制前一部分的长度，避免提示词过长
             if (previousContent.length > 3000) {
               previousContent = previousContent.substring(previousContent.length - 3000);
             }
             
-            // 使用普通大纲生成（替换智能大纲生成）
-            try {
-              // 构建包含上下文的提示词
-              String enhancedPrompt = '''
-${batchPrompt}
-
+            // 构建包含上下文的提示词
+            contextPrompt = '''
 请注意以下要求：
 1. 确保与前面生成的内容保持连贯性
 2. 确保情节发展合理，角色行为一致
 3. 避免出现逻辑断层或情节冲突
+
+已生成的章节大纲：
+$previousContent
 ''';
-              
-              await for (final chunk in _aiService.generateOutlineTextStream(
-                systemPrompt: "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。确保每个章节之间情节连贯，角色发展合理。",
-                userPrompt: enhancedPrompt,
-                maxTokens: _getMaxTokensForChapter(0) * 2,
-                temperature: 0.7,
-                novelTitle: title, // 传递小说标题
-              )) {
-                batchContent += chunk;
-                if (onContent != null) {
-                  onContent(chunk);
-                }
-              }
-            } catch (e) {
-              print('大纲生成失败: $e');
-              
-              // 如果出错，使用备用方法
-              if (onProgress != null) {
-                onProgress('标准生成遇到问题，尝试备用方法...');
-              }
-              
-              // 使用标准流式生成作为备用
-              await for (final chunk in _aiService.generateOutlineTextStream(
-                systemPrompt: batchPrompt,
-                userPrompt: "请按照要求生成第$startChapter到第$endChapter章的详细大纲",
-                maxTokens: _getMaxTokensForChapter(0) * 2,
-                temperature: 0.7,
-                novelTitle: title, // 传递小说标题
-              )) {
-                batchContent += chunk;
-                if (onContent != null) {
-                  onContent(chunk);
-                }
-              }
-            }
-          } catch (e) {
-            print('智能大纲生成失败，切换到标准模式: $e');
-            // 智能生成失败，回退到标准流式生成
+          }
+          
+          // 统一的大纲生成系统提示词
+          String systemPromptText = "你是一个专业的小说大纲创作助手，请根据用户的需求提供完整的情节大纲。大纲要包含清晰的起承转合，角色线索和主要冲突。确保每个章节之间情节连贯，角色发展合理。";
+          
+          // 统一的用户提示词
+          String userPromptText = '''
+${batchPrompt}
+${contextPrompt}
+请按照要求生成第$startChapter到第$endChapter章的详细大纲${startChapter > 1 ? "，确保与前面章节情节连贯" : ""}
+''';
+          
             if (onProgress != null) {
-              onProgress('智能模式失败，切换到标准模式...');
+            onProgress('正在使用标准模式创建大纲...');
             }
             
-            // 使用标准流式生成
+          // 使用统一的生成方法
             await for (final chunk in _aiService.generateOutlineTextStream(
-              systemPrompt: batchPrompt,
-              userPrompt: "请按照要求生成第$startChapter到第$endChapter章的详细大纲",
+            systemPrompt: systemPromptText,
+            userPrompt: userPromptText,
               maxTokens: _getMaxTokensForChapter(0) * 2,
               temperature: 0.7,
-              conversationId: null, // 使用全局对话ID，不再创建专用ID
-              novelTitle: title, // 传递小说标题
+            novelTitle: title, // 传递小说标题
             )) {
               batchContent += chunk;
               if (onContent != null) {
                 onContent(chunk);
               }
             }
+        } catch (e) {
+          print('大纲生成失败: $e');
+          
+          // 如果出错，使用备用方法
+          if (onProgress != null) {
+            onProgress('标准生成遇到问题，尝试备用方法...');
           }
-        } else {
-          // 第一批次使用标准流式生成
+          
+          // 使用备用标准流式生成
           await for (final chunk in _aiService.generateOutlineTextStream(
             systemPrompt: batchPrompt,
             userPrompt: "请按照要求生成第$startChapter到第$endChapter章的详细大纲",
@@ -580,7 +556,7 @@ ${batchPrompt}
           // 检查并修复连贯性问题
           if (generatedChaptersBuffer.isNotEmpty) {
             if (onProgress != null) {
-              onProgress('正在检查大纲连贯性...');
+              onProgress('正在处理大纲批次...');
             }
             // 获取前一批次的最后部分作为参考上下文
             String previousContent = generatedChaptersBuffer.toString().trim();
@@ -589,7 +565,8 @@ ${batchPrompt}
               previousContent = previousContent.substring(previousContent.length - 2000);
             }
             
-            // 检查并修复连贯性 - 使用langchain而不是自定义方法
+            // 注释掉检查并修复连贯性的代码 - 使用langchain而不是自定义方法
+            /*
             try {
               // 只有在LangChain服务可用时才使用它
               if (langchainService != null) {
@@ -622,17 +599,29 @@ $processedBatch
                 processedBatch = fixedContent;
               } else {
                 // 如果LangChain不可用，使用原始方法
-                processedBatch = await _ensureOutlineCoherence(processedBatch, previousContent);
+            processedBatch = await _ensureOutlineCoherence(processedBatch, previousContent);
               }
             } catch (e) {
               print('LangChain连贯性修复失败: $e');
               // 继续使用原始方法作为备用
               processedBatch = await _ensureOutlineCoherence(processedBatch, previousContent);
             }
+            */
             
+            // 移除连贯性检查的进度提示
+            /*
             if (onProgress != null) {
               onProgress('大纲连贯性检查完成，继续生成...');
             }
+            */
+          }
+        }
+        
+        // 添加到完整大纲，确保有明确的章节边界
+        if (startChapter > 1) {
+          // 确保在章节之间有足够的分隔
+          if (!fullOutlineBuffer.toString().endsWith('\n\n')) {
+            fullOutlineBuffer.writeln();
           }
         }
         
@@ -653,8 +642,22 @@ $processedBatch
         await Future.delayed(const Duration(milliseconds: 500));
       }
 
-      // 格式化完整大纲
+      // 格式化完整大纲，确保格式一致性
       String outlineContent = OutlineGeneration.formatOutline(fullOutlineBuffer.toString());
+      
+      // 验证所有章节都能被正确提取
+      bool allChaptersValid = true;
+      for (int i = 1; i <= totalChapters; i++) {
+        final chapterOutline = _extractChapterOutline(outlineContent, i);
+        if (chapterOutline.isEmpty || chapterOutline.contains('无法提取')) {
+          print('警告：无法从大纲中提取第$i章内容');
+          allChaptersValid = false;
+        }
+      }
+      
+      if (!allChaptersValid) {
+        print('部分章节大纲提取失败，但将继续使用现有大纲');
+      }
       
       if (onProgress != null) {
         if (isShortNovel) {
@@ -1125,7 +1128,7 @@ ${targetReaderPrompt.isNotEmpty ? "目标读者：\n" + targetReaderPrompt + "\n
       );
       
       // 将大纲作为第0章保存
-      novel.addOutlineAsChapter();
+      // novel.addOutlineAsChapter(); // 已取消此功能
       
       // 记录完成时间并计算耗时
       final endTime = DateTime.now();
@@ -1218,7 +1221,7 @@ ${targetReaderPrompt.isNotEmpty ? "目标读者：\n" + targetReaderPrompt + "\n
           updateRealtimeOutput('\n================================\n\n');
           
           // 将大纲作为第0章保存
-          novel.addOutlineAsChapter();
+          // novel.addOutlineAsChapter(); // 已取消此功能
         }
         
         // 生成章节内容
@@ -2409,6 +2412,90 @@ $outline
   // 解析大纲,提取每章节的具体要求
   Map<int, Map<String, dynamic>> _parseOutline(String outline) {
     final Map<int, Map<String, dynamic>> chapterPlans = {};
+    
+    // 首先尝试通过分段分析，查找所有可能的章节标记
+    final chapterMatches = RegExp(r'第(\d+)章').allMatches(outline).toList();
+    
+    // 如果找到多个章节标记
+    if (chapterMatches.isNotEmpty) {
+      for (int i = 0; i < chapterMatches.length; i++) {
+        final match = chapterMatches[i];
+        final chapterNumber = int.parse(match.group(1)!);
+        final start = match.start;
+        final end = i < chapterMatches.length - 1 ? chapterMatches[i + 1].start : outline.length;
+        
+        // 提取章节文本
+        final chapterText = outline.substring(start, end);
+        
+        // 提取标题
+        String chapterTitle = '第$chapterNumber章';
+        final titleLines = chapterText.split('\n');
+        if (titleLines.isNotEmpty) {
+          final firstLine = titleLines[0].trim();
+          if (firstLine.contains('：')) {
+            chapterTitle = firstLine.split('：')[1].trim();
+          } else if (firstLine.contains(':')) {
+            chapterTitle = firstLine.split(':')[1].trim();
+          } else if (firstLine.length > 4) { // 假设"第X章"后有标题
+            chapterTitle = firstLine.substring(3).trim();
+          }
+        }
+        
+        // 提取章节内容（除标题行外）
+        final contentLines = chapterText.split('\n').skip(1).join('\n').trim();
+        
+        // 解析章节内容中的主要情节、次要情节等
+        final Map<String, List<String>> contentSections = {
+          'mainPlots': <String>[],
+          'subPlots': <String>[],
+          'characterDev': <String>[],
+          'foreshadowing': <String>[],
+        };
+        
+        // 当前处理的部分
+        String currentSection = '';
+        
+        // 处理章节内容的每一行
+        for (final line in contentLines.split('\n')) {
+          final trimmed = line.trim();
+          if (trimmed.isEmpty) continue;
+          
+          if (trimmed.startsWith('主要情节：') || trimmed.startsWith('主要情节:')) {
+            currentSection = 'mainPlots';
+            contentSections[currentSection]!.add(trimmed.replaceFirst(RegExp(r'主要情节[：:]'), '').trim());
+          } else if (trimmed.startsWith('次要情节：') || trimmed.startsWith('次要情节:')) {
+            currentSection = 'subPlots';
+            contentSections[currentSection]!.add(trimmed.replaceFirst(RegExp(r'次要情节[：:]'), '').trim());
+          } else if (trimmed.startsWith('人物发展：') || trimmed.startsWith('人物发展:')) {
+            currentSection = 'characterDev';
+            contentSections[currentSection]!.add(trimmed.replaceFirst(RegExp(r'人物发展[：:]'), '').trim());
+          } else if (trimmed.startsWith('伏笔：') || trimmed.startsWith('伏笔:') || 
+                     trimmed.startsWith('伏笔/悬念：') || trimmed.startsWith('伏笔/悬念:')) {
+            currentSection = 'foreshadowing';
+            contentSections[currentSection]!.add(trimmed.replaceFirst(RegExp(r'伏笔(?:/悬念)?[：:]'), '').trim());
+          } else if (trimmed.startsWith('- ') && currentSection.isNotEmpty) {
+            // 处理列表项
+            contentSections[currentSection]!.add(trimmed.substring(2).trim());
+          } else if (currentSection.isNotEmpty) {
+            // 将非标记行添加到当前部分
+            contentSections[currentSection]!.add(trimmed);
+          }
+        }
+        
+        // 创建章节计划
+        chapterPlans[chapterNumber] = {
+          'title': chapterTitle,
+          'content': chapterText,
+          'mainPlots': contentSections['mainPlots'],
+          'subPlots': contentSections['subPlots'],
+          'characterDev': contentSections['characterDev'],
+          'foreshadowing': contentSections['foreshadowing'],
+        };
+      }
+    }
+    
+    // 如果上述方法解析失败，尝试使用原始方法作为备份
+    if (chapterPlans.isEmpty) {
     int currentChapter = 0;
     Map<String, dynamic>? currentPlan;
     
@@ -2466,6 +2553,7 @@ $outline
     // 添加最后一章
     if (currentChapter > 0 && currentPlan != null) {
       chapterPlans[currentChapter] = currentPlan;
+      }
     }
     
     return chapterPlans;
@@ -2755,7 +2843,7 @@ ${targetReaderPrompt.isNotEmpty ? "目标读者：\n" + targetReaderPrompt + "\n
               : chapter.content;
           print('- 第${chapter.number}章: ${contentPreview}');
         }
-      } else {
+            } else {
         print('无历史章节');
       }
       
@@ -2776,9 +2864,41 @@ ${targetReaderPrompt.isNotEmpty ? "目标读者：\n" + targetReaderPrompt + "\n
 ''';
       
       // 从大纲中提取当前章节的信息
-      final chapterOutline = _extractChapterOutline(outline, number);
-      if (chapterOutline.isEmpty) {
-        throw Exception('无法从大纲中找到第$number章的信息');
+      var chapterOutline = _extractChapterOutline(outline, number);
+      if (chapterOutline.isEmpty || chapterOutline.contains('无法提取')) {
+        print('警告：无法从大纲中提取第$number章的信息，尝试备用方法...');
+        
+        // 尝试从整体大纲中提取相关内容作为备用
+        String fallbackOutline = '';
+        try {
+          final lines = outline.split('\n');
+          int relevantLineCount = 0;
+          for (final line in lines) {
+            if (line.contains('第$number章') || 
+                line.contains('章节$number') || 
+                line.contains('$number\\.') || 
+                line.contains('$number、')) {
+              fallbackOutline += '$line\n';
+              relevantLineCount = 15; // 开始收集后面的15行
+            } else if (relevantLineCount > 0) {
+              fallbackOutline += '$line\n';
+              relevantLineCount--;
+            }
+          }
+          
+          if (fallbackOutline.isNotEmpty) {
+            print('使用备用方法找到了第$number章的相关内容');
+        } else {
+            print('备用方法也无法找到第$number章的内容，将使用整体大纲');
+            fallbackOutline = '根据整体大纲，创作第$number章的内容。';
+            }
+          } catch (e) {
+          print('备用提取方法失败: $e');
+          fallbackOutline = '根据整体大纲，创作第$number章的内容。';
+        }
+        
+        // 使用备用提取的内容
+        chapterOutline = fallbackOutline;
       }
       
       // 构建用户提示词
@@ -2787,6 +2907,9 @@ ${targetReaderPrompt.isNotEmpty ? "目标读者：\n" + targetReaderPrompt + "\n
 
 【本章节大纲】
 $chapterOutline
+
+【整体大纲参考】
+${outline.length > 500 ? outline.substring(0, 500) + '...(省略部分)' : outline}
 
 【创作要求】
 - 类型：$genre
@@ -3144,7 +3267,7 @@ $paragraph
       if (_hasCoherenceIssues(analysisResult)) {
         onProgress?.call('发现连贯性问题，正在修复...');
         
-        // 构建修复提示词
+          // 构建修复提示词
         final fixBuffer = StringBuffer();
         fixBuffer.writeln('【当前章节大纲】');
         fixBuffer.writeln(currentChapterOutline);
@@ -3177,7 +3300,7 @@ $paragraph
       onProgress?.call('章节连贯性检查完成，未发现问题');
       
       return generatedContent;
-    } catch (e) {
+        } catch (e) {
       print('章节连贯性检查失败: $e');
       // 如果检查失败，返回原始内容
       return generatedContent;
@@ -3186,18 +3309,36 @@ $paragraph
 
   // 从大纲中提取特定章节的内容
   String _extractChapterOutline(String outline, int chapterNumber) {
-    // 尝试匹配第N章的整个内容块
-    final RegExp chapterRegex = RegExp(r'第' + chapterNumber.toString() + r'章.*?(?=第' + (chapterNumber + 1).toString() + r'章|$)', dotAll: true);
-    final match = chapterRegex.firstMatch(outline);
+    // 使用多种正则表达式模式匹配不同格式的章节
+    final patterns = [
+      // 标准格式：第N章：标题
+      RegExp(r'第' + chapterNumber.toString() + r'章[:：].*?(?=第' + (chapterNumber + 1).toString() + r'章|$)', dotAll: true),
+      // 无冒号格式：第N章 标题
+      RegExp(r'第' + chapterNumber.toString() + r'章\s.*?(?=第' + (chapterNumber + 1).toString() + r'章|$)', dotAll: true),
+      // 仅数字格式：N. 标题或N、标题
+      RegExp(r'\b' + chapterNumber.toString() + r'[\.、].*?(?=\b' + (chapterNumber + 1).toString() + r'[\.、]|$)', dotAll: true),
+    ];
+    
+    // 尝试所有正则表达式模式
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(outline);
     if (match != null) {
-      return match.group(0) ?? '';
+        String result = match.group(0) ?? '';
+        print('成功使用正则表达式提取第$chapterNumber章大纲');
+        return result;
+      }
     }
     
-    // 如果未找到匹配，则尝试从解析的大纲中获取
+    // 如果正则匹配失败，尝试使用解析方法
     final chapterPlans = _parseOutline(outline);
     if (chapterPlans.containsKey(chapterNumber)) {
+      print('使用解析方法成功提取第$chapterNumber章大纲');
       return chapterPlans[chapterNumber]?['content'] ?? '';
     }
+    
+    // 记录失败信息以便调试
+    final previewLength = outline.length > 300 ? 300 : outline.length;
+    print('无法提取第$chapterNumber章大纲，大纲前300个字符: ${outline.substring(0, previewLength)}...');
     
     return '无法提取第$chapterNumber章的大纲内容';
   }

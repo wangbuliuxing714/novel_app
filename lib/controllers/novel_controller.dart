@@ -1120,4 +1120,32 @@ ${prompt}
       rethrow;
     }
   }
+
+  // 添加更新小说大纲的方法
+  Future<void> updateNovelOutline(String novelTitle, String updatedOutline) async {
+    try {
+      // 查找现有小说
+      var novel = novels.firstWhere(
+        (n) => n.title == novelTitle,
+        orElse: () => throw Exception('找不到小说: $novelTitle'),
+      );
+
+      // 创建更新后的小说副本
+      var updatedNovel = novel.copyWith(outline: updatedOutline);
+      
+      // 在novels列表中更新
+      int index = novels.indexWhere((n) => n.title == novelTitle);
+      if (index != -1) {
+        novels[index] = updatedNovel;
+      }
+      
+      // 保存到存储
+      await _saveToHive(updatedNovel);
+      
+      print('小说大纲更新成功: $novelTitle');
+    } catch (e) {
+      print('更新小说大纲失败: $e');
+      rethrow;
+    }
+  }
 }

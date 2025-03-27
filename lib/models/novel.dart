@@ -101,17 +101,19 @@ class Novel {
   );
 
   Chapter get outlineChapter {
-    return chapters.firstWhere(
-      (chapter) => chapter.number == 0,
-      orElse: () => Chapter(
-        number: 0,
-        title: '大纲',
-        content: outline,
-      ),
+    // 不再从章节列表中查找第0章
+    // 直接返回包含大纲内容的临时章节对象
+    return Chapter(
+      number: 0,
+      title: '大纲',
+      content: outline,
     );
   }
 
   void addOutlineAsChapter() {
+    // 此功能已弃用，不再将大纲保存为第0章
+    // 为保持兼容性，保留此方法但不执行任何操作
+    /*
     if (!chapters.any((chapter) => chapter.number == 0)) {
       chapters.insert(0, Chapter(
         number: 0,
@@ -119,6 +121,7 @@ class Novel {
         content: outline,
       ));
     }
+    */
   }
 }
 

@@ -361,15 +361,8 @@ class _NovelContinueScreenState extends State<NovelContinueScreen> {
       // 更新大纲
       final updatedOutline = widget.novel.outline + '\n\n' + _generatedOutline.value;
       
-      // 创建包含更新后大纲的新章节
-      final outlineChapter = Chapter(
-        number: 0,
-        title: '大纲',
-        content: updatedOutline,
-      );
-      
-      // 保存大纲章节
-      await _novelController.saveChapter(widget.novel.title, outlineChapter);
+      // 直接更新小说的outline属性，而不是创建大纲章节
+      await _novelController.updateNovelOutline(widget.novel.title, updatedOutline);
       
       // 保存新生成的章节
       for (final chapter in _generatedChapters) {
