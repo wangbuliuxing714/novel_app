@@ -3737,4 +3737,115 @@ ${targetReaders != null ? '- 目标读者：$targetReaders\n' : ''}
       throw Exception('重新生成章节失败: $e');
     }
   }
+
+  /// 从大纲直接生成章节内容（用于续写场景）
+  Future<Chapter> generateChapterFromOutline({
+    required String title,
+    required String outline,
+    required int number,
+    required String chapterTitle,
+    required String chapterOutline,
+    List<Chapter>? previousChapters,
+    String? novelConversationId,
+    void Function(String)? onProgress,
+    void Function(String)? onContent,
+    String? style,
+  }) async {
+    try {
+      print('从大纲生成续写章节: 第$number章 - $chapterTitle');
+      
+      // 使用专门的会话ID，确保续写的连贯性
+      final conversationId = novelConversationId ?? '_continue_${title.replaceAll(' ', '_')}';
+      
+      // 构建系统提示词
+      final systemPrompt = '''
+你是一位专业的小说写手，擅长续写和扩展故事。请根据以下信息，完成小说《$title》的第$number章。
+
+写作要求：
+1. 详细展开本章情节，确保内容符合提供的章节大纲
+2. 保持与小说整体大纲和风格的一致性
+3. 如有前面章节的内容，请确保情节的连贯性和人物形象的一致性
+4. 产生至少4000字的高质量内容
+5. 使用生动的描写和精彩的对话
+6. 不要包含"第X章"等标题，直接开始正文
+7. 创作风格: ${style ?? _getRandomStyle()}
+''';
+
+      // 格式化章节大纲内容
+      final formattedOutline = '''
+小说整体大纲：
+${_summarizeText(outline, 1000)}
+
+当前章节信息：
+标题：$chapterTitle
+大纲：
+$chapterOutline
+''';
+
+      // 添加前文内容的摘要（如果有）
+      String contextContent = '';
+      if (previousChapters != null && previousChapters.isNotEmpty) {
+        contextContent = "前文内容摘要：\n";
+        
+        // 最多包含3章的前文
+        final relevantChapters = previousChapters.length <= 3 
+            ? previousChapters 
+            : previousChapters.sublist(previousChapters.length - 3);
+        
+        for (final ch in relevantChapters) {
+          contextContent += "第${ch.number}章：${_summarizeText(ch.content, 300)}\n\n";
+        }
+      }
+
+      // 构建用户提示词
+      final prompt = '''
+请续写《$title》的第$number章：$chapterTitle
+
+$formattedOutline
+
+$contextContent
+
+请直接开始创作章节内容，不需要包含标题和任何额外解释。
+''';
+
+      onProgress?.call('正在生成第$number章内容...');
+      
+      // 创建章节内容
+      final buffer = StringBuffer();
+      
+      await for (final chunk in _aiService.generateTextStream(
+        systemPrompt: systemPrompt,
+        userPrompt: prompt,
+        maxTokens: 8000,
+        temperature: 0.7,
+        conversationId: conversationId,
+      )) {
+        buffer.write(chunk);
+        
+        // 如果提供了回调，实时更新生成内容
+        if (onContent != null) {
+          onContent(chunk);
+        }
+        
+        // 检查是否暂停
+        await _checkPause();
+      }
+      
+      // 清理生成的内容
+      final cleanedContent = _cleanContent(buffer.toString());
+      
+      // 创建章节对象
+      Chapter chapter = Chapter(
+        number: number,
+        title: chapterTitle,
+        content: cleanedContent,
+      );
+      
+      onProgress?.call('第$number章生成完成');
+      return chapter;
+    } catch (e) {
+      print('从大纲生成章节失败: $e');
+      throw Exception('生成章节内容失败: $e');
+    }
+  }
 } 

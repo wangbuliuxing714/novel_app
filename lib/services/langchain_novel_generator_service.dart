@@ -48,7 +48,7 @@ class ChatHistory {
     String? sessionId,
     List<ChatMessage>? messages,
     this.maxContextLength = 16000000,
-    this.maxMessages = 5000,
+    this.maxMessages = 50,
   }) : 
     sessionId = sessionId ?? const Uuid().v4(),
     messages = messages ?? [];
@@ -112,7 +112,7 @@ class ChatHistory {
           .map((m) => ChatMessage.fromJson(m))
           .toList(),
       maxContextLength: json['maxContextLength'] ?? 16000000,
-      maxMessages: json['maxMessages'] ?? 5000,
+      maxMessages: json['maxMessages'] ?? 50,
     );
   }
 }
@@ -630,7 +630,7 @@ ${context.getFormattedContext()}''');
       buffer.writeln('\n# 小说已有内容（请确保回答与此保持一致）');
       
       // 截断过长的内容，避免超出模型上下文窗口
-      final maxContentLength = 5000; // 可根据模型上下文窗口大小调整
+      final maxContentLength = 50; // 可根据模型上下文窗口大小调整
       if (novelContent.length > maxContentLength) {
         final truncatedContent = novelContent.substring(novelContent.length - maxContentLength);
         buffer.writeln('${truncatedContent}...');
@@ -648,13 +648,20 @@ ${context.getFormattedContext()}''');
 # 创作指南
 1. 你的回答应该保持具有创意和沉浸感的叙事风格
 2. 根据提供的小说背景信息和已有内容进行创作，保持情节、风格和人物的一致性
-3. 使用生动的细节、对话和情感元素让故事栩栩如生
+3. 绝对避免重复已有内容中的段落、句子或情节，保持故事的持续推进
 4. 不要生硬地解释或总结情节，而是像讲故事一样自然地展开
 5. 允许加入创意元素以增强故事体验，但要与已有设定保持一致
 6. 回复应该作为小说内容的直接延续，不需要使用引号或前缀
-7. 在用户要求时可以提供写作建议、情节方向或角色发展指导
+7. 每次续写都要带来新的情节发展，避免故事停滞不前
 8. 请认真阅读聊天历史和小说已有内容，保持故事情节的连贯性
 9. 当继续故事时，请参考小说的已有内容和之前所有消息中的情节、人物和设定
+
+# 防止重复的特别指南
+- 仔细阅读已有内容的最后部分，确保你的续写不会重复之前的内容
+- 当你发现自己要写的内容与之前相似时，请转向新的情节发展
+- 避免使用重复的句式、词汇和描述方式
+- 确保每次续写都能推动故事向前发展，引入新的元素或深化已有元素
+- 如果发现对话有循环趋势，请转向新的对话主题或情节发展
 
 # 回应风格
 - 始终使用流畅、引人入胜的小说写作风格
@@ -664,7 +671,7 @@ ${context.getFormattedContext()}''');
 - 请直接生成故事内容，不需要写"以下是小说内容"之类的开场白
 - 不要回顾或总结已有内容，直接延续故事
 
-现在，请根据用户的输入，继续创作或提供有关这部小说的创意建议。''');
+现在，请根据用户的输入，继续创作或提供有关这部小说的创意建议。避免重复任何已有内容，确保故事持续向前发展。''');
 
     final prompt = buffer.toString();
     print('生成系统提示词，长度: ${prompt.length}');

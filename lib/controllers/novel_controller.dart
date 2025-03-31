@@ -966,13 +966,57 @@ ${prompt}
     required int chapterNumber,
     String? outlineString,
     Function(String)? onStatus,
+    String? novelTitle,
   }) async {
     try {
+      // 处理续写场景：如果提供了outlineString，直接使用它构建章节
+      if (outlineString != null) {
+        String title = novelTitle ?? "未命名小说";
+        
+        // 提取当前章节的详细信息
+        final chapterPattern = RegExp(r'第' + chapterNumber.toString() + r'章[:：](.*?)\n(.*?)(?=第\d+章|$)', dotAll: true);
+        final match = chapterPattern.firstMatch(outlineString);
+        String chapterTitle = "第" + chapterNumber.toString() + "章";
+        String chapterContent = "";
+        
+        if (match != null) {
+          chapterTitle = match.group(1)?.trim() ?? chapterTitle;
+          chapterContent = match.group(2)?.trim() ?? "";
+        }
+        
+        // 获取已生成的章节作为历史记录
+        final previousChapters = _generatedChapters
+          .where((ch) => ch.number < chapterNumber)
+          .toList();
+        
+        onStatus?.call('正在生成第$chapterNumber章...');
+        
+        // 为续写场景创建一个会话ID，确保使用相同的历史记录
+        final novelConversationId = '_continue_${title.replaceAll(' ', '_')}';
+        
+        // 生成章节内容
+        final chapter = await _novelGenerator.generateChapterFromOutline(
+          title: title,
+          outline: outlineString,
+          number: chapterNumber,
+          chapterTitle: chapterTitle,
+          chapterOutline: chapterContent,
+          previousChapters: previousChapters,
+          novelConversationId: novelConversationId,
+          onProgress: onStatus,
+          onContent: (content) => _updateRealtimeOutput(content),
+        );
+        
+        onStatus?.call('第$chapterNumber章生成完成');
+        return chapter;
+      }
+      
+      // 原始逻辑，使用currentOutline.value
       if (currentOutline.value == null) {
         throw Exception('没有可用的大纲');
       }
       
-      final novelTitle = currentOutline.value!.novelTitle;
+      final novelTitleFromOutline = currentOutline.value!.novelTitle;
       final chapterOutline = currentOutline.value!.chapters.firstWhere(
         (ch) => ch.chapterNumber == chapterNumber,
         orElse: () => throw Exception('找不到章节大纲'),
@@ -992,7 +1036,7 @@ ${prompt}
       
       // 生成章节内容，传递小说标题
       final chapter = await _novelGenerator.generateChapter(
-        title: novelTitle,
+        title: novelTitleFromOutline,
         outline: finalOutlineString,
         number: chapterNumber,
         totalChapters: currentOutline.value!.chapters.length,
@@ -1012,7 +1056,7 @@ ${prompt}
       }
       
       // 保存到Hive
-      await _saveChapterToHive(novelTitle, chapter);
+      await _saveChapterToHive(novelTitleFromOutline, chapter);
       
       onStatus?.call('第$chapterNumber章生成完成');
       return chapter;

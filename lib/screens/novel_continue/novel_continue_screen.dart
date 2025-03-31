@@ -329,6 +329,7 @@ class _NovelContinueScreenState extends State<NovelContinueScreen> {
         final chapterContent = await _novelController.generateChapterFromOutline(
           chapterNumber: number,
           outlineString: _generatedOutline.value,
+          novelTitle: widget.novel.title,
           onStatus: (status) {
             setState(() {
               _generationStatus = status;
